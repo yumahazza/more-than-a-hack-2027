@@ -76,6 +76,23 @@ MIN_DEAD = FPS             # a dead stretch under 1 s is noise
 MERGE_DEAD = 2 * FPS       # two dead stretches less than 2 s apart are one stoppage
 
 # -- possession ----------------------------------------------------------------------------------
+# v4: team in live play is the most likely H/A sequence of a two-state hidden Markov model,
+# decoded with Viterbi, instead of switching on single touch events.
+# Why: diagnose.py showed the velocity-change ("impulse") touch detector almost never fires at a
+# real change: the ATD ball path is smooth (explore2: speed over 1 frame and over 5 frames have the
+# same distribution), so a touch bends the path over many frames instead of in one.
+# Evidence per frame (log-likelihood ratio, + = home): how much closer one team is to the ball,
+# counted only when someone is near enough to be playing it.
+EVIDENCE_RADIUS = 2.0      # m; a ball further than this from every player is in flight: no evidence
+EVIDENCE_SCALE = 1.0       # m of distance lead per unit of evidence
+EVIDENCE_CAP = 0.5         # per frame; one frame can never decide alone
+TAG_EVIDENCE = 0.05        # per frame while the ball is lost and a reliable tag names a team
+# Cost of a team change = log of the expected frames between changes. Professional football
+# possessions last ~10-20 s on average; 15 s = 375 frames -> ln(375) = 5.9. With the cap above, a
+# clear lead (>= 0.5 m) needs ~0.5 s of play to justify a change, so a short real possession
+# (one touch, a header) can still appear, while brief closeness of a defender cannot.
+SWITCH_COST = 5.9
+START_PRIOR = 20.0         # the restart team is near certain at the first frame of live play
 START_LOOKAHEAD = 5 * FPS  # after a restart, the first touch within 5 s names the team
 SETPIECE_WINDOW = 5 * FPS  # a set-piece tag whose window +/- 5 s covers the restart names it too
 GAP_TAG_MIN = 2 * FPS      # while the ball is lost, a tag must point to the other team for 2 s

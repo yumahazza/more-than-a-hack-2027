@@ -24,6 +24,7 @@ from games import GAME, half_video_blocks, source_frames  # noqa: E402
 import params as P  # noqa: E402
 import tags as tagging  # noqa: E402
 from atd import load_arrays  # noqa: E402
+from deadball import close_holes, rolling_max, runs, sustained  # noqa: E402
 from run import predict  # noqa: E402
 
 GT_PATH = os.path.join(ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
@@ -66,6 +67,80 @@ def phase_stats(f, tag_data, a, b):
         ("SP:" + "/".join(sorted(set(sp)))) if sp else "")
 
 
+def stoppage_flags(f, tag_data):
+    """The per-frame conditions of the stoppage rule in deadball.py, so a miss can be explained."""
+    slow = np.nan_to_num(f["activity_s"], nan=np.inf) < P.SLOW_PLAYERS
+    passing = sustained(f["vis"] & (np.nan_to_num(f["speed"], nan=0.0) > P.PASS_SPEED), P.FAST_MIN)
+    quiet_ball = ~rolling_max(passing, P.QUIET_WINDOW)
+    quiet = close_holes(slow & quiet_ball, P.CLOSE_HOLES)
+    return {"slow": slow, "passing": passing, "quiet_ball": quiet_ball, "quiet": quiet,
+            "phase": tag_data["phase"]}
+
+
+def why_dead_missed(gt, labels, f, tag_data, lo, hi):
+    print("\n" + "=" * 100 + "\n1b. WHY THE STOPPAGE RULE DID OR DID NOT FIRE\n" + "=" * 100)
+    print("share of the ground-truth D stretch where each condition holds:")
+    print("  slow = players under {} m/s, pass = a sustained ball over {} m/s,".format(
+        P.SLOW_PLAYERS, P.PASS_SPEED))
+    print("  quiet = slow and no pass within 1 s, phase = covered by a phase-of-play tag")
+    flags = stoppage_flags(f, tag_data)
+    sec = P.FPS
+    print("  {:<10} {:>6} {:>6} {:>6} {:>6} {:>7} {:>16}".format(
+        "D length", "ours", "slow", "pass", "quiet", "phase", "longest quiet"))
+    for s, e, code in segments(gt, lo, hi):
+        if code != 2:
+            continue
+        q = flags["quiet"][s:e]
+        longest = int(runs(q)[1].max()) if q.any() else 0
+        print("  {:<10} {:>5.0f}% {:>5.0f}% {:>5.0f}% {:>5.0f}% {:>6.0f}% {:>14.1f} s".format(
+            "{:.1f} s".format((e - s) / sec), 100 * np.mean(labels[s:e] == 2),
+            100 * flags["slow"][s:e].mean(), 100 * flags["passing"][s:e].mean(),
+            100 * q.mean(), 100 * flags["phase"][s:e].mean(), longest / sec))
+    print("  rule: quiet for {} s with a set-piece tag / ball out nearby, or {} s with phase <= {:.0f}%".format(
+        P.STOP_MIN // sec, P.STOP_ALONE // sec, 100 * P.LIVE_TAG_MAX))
+
+
+def touches_near_changes(gt, labels, f, lo, hi):
+    print("\n" + "=" * 100 + "\n2b. WHAT THE TOUCH DETECTOR SAW AROUND EACH TEAM CHANGE (+/- 2 s)\n" + "=" * 100)
+    print("impulse = ball velocity changes by > {} m/s. Each impulse is credited to the nearest".format(P.IMPULSE))
+    print("player's team only if he is within {} m AND at least {} m closer than the other team.".format(
+        P.R_TOUCH, P.MARGIN))
+    print("Counts are impulse frames: ok = credited, far = nearest too far, contest = teams too close.")
+    print("ctrl = longest run of frames where the NEW team controls the ball (needs {} frames).".format(
+        P.CONTROL_MIN))
+    sec = P.FPS
+    vis, near_d, margin, team = f["vis"], f["near_d"], f["margin"], f["near_team"]
+    imp = vis & (np.nan_to_num(f["impulse"]) > P.IMPULSE) & np.isfinite(near_d)
+    control_raw = (vis & np.isfinite(near_d) & (near_d < P.R_CONTROL)
+                   & (np.nan_to_num(f["speed"], nan=99) < P.CONTROL_SPEED))
+    print("\n{:<8} {:>9} | {:^22} | {:^22} | {:>5} {:>9} {:>10}".format(
+        "change", "ours", "NEW team impulses", "OLD team impulses", "ctrl", "new<1m", "new min d"))
+    print("{:<8} {:>9} | {:>6} {:>6} {:>8} | {:>6} {:>6} {:>8} |".format(
+        "", "", "ok", "far", "contest", "ok", "far", "contest"))
+    for g in range(lo + 1, hi):
+        if not (gt[g] in (0, 1) and gt[g - 1] in (0, 1) and gt[g] != gt[g - 1]):
+            continue
+        new = int(gt[g])
+        a, b = g - 2 * sec, g + 2 * sec
+        changed = [t for t in range(max(a, lo + 1), min(b, hi))
+                   if labels[t] == new and labels[t - 1] == 1 - new]
+        status = "{:+.1f} s".format((changed[0] - g) / sec) if changed else "MISSED"
+        counts = {}
+        for side in (new, 1 - new):
+            sel = imp[a:b] & (team[a:b] == side)
+            d, m = near_d[a:b][sel], margin[a:b][sel]
+            ok = (d < P.R_TOUCH) & (m >= P.MARGIN)
+            counts[side] = (int(ok.sum()), int((d >= P.R_TOUCH).sum()),
+                            int(((d < P.R_TOUCH) & (m < P.MARGIN)).sum()))
+        new_d = f["d_home" if new == 0 else "d_away"][a:b][vis[a:b]]
+        ctrl = control_raw[a:b] & (team[a:b] == new)
+        longest = int(runs(ctrl)[1].max()) if ctrl.any() else 0
+        print("{:<8} {:>9} | {:>6} {:>6} {:>8} | {:>6} {:>6} {:>8} | {:>5} {:>8.0f}% {:>8}".format(
+            "-> " + NAME[new], status, *counts[new], *counts[1 - new], longest,
+            100 * np.mean(new_d < 1) if new_d.size else 0,
+            "{:.1f} m".format(np.nanmin(new_d)) if new_d.size and np.isfinite(new_d).any() else "-"))
+
+
 def main():
     n = source_frames("tactical", GAME)
     arrays = load_arrays()
@@ -105,6 +180,8 @@ def main():
                            ("5 s after", e, e + 5 * sec)):
             share = 100 * np.mean(labels[max(a, 0):b] == 2) if b > a else 0
             print("   {:<12} ours D {:3.0f}%   {}".format(name, share, phase_stats(f, tag_data, a, b)))
+
+    why_dead_missed(gt, labels, f, tag_data, lo, hi)
 
     # -- 2. team changes in live play ------------------------------------------------------------
     print("\n" + "=" * 100 + "\n2. TEAM CHANGES (ball in play) IN THE GROUND TRUTH vs ours\n" + "=" * 100)
@@ -147,6 +224,8 @@ def main():
     print("\nours team changes not in the ground truth: {}".format(len(spurious)))
     for k, v in kinds.items():
         print("   triggered by {:<22} {}".format(k, v))
+
+    touches_near_changes(gt, labels, f, lo, hi)
 
     # -- 3. restarts -----------------------------------------------------------------------------
     print("\n" + "=" * 100 + "\n3. AFTER A DEAD BALL: TEAM GIVEN BY ours\n" + "=" * 100)

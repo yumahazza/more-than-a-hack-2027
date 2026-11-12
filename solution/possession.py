@@ -1,14 +1,19 @@
 """Which team has the ball while it is alive.
 
-Lesson from the public ground truth and the video: a single touch (even a header) already counts
-as a possession, so the team changes when an opponent PLAYS THE BALL, not when he is merely the
-nearest player. Nearest-player flips ~29 times a minute; real possession changes ~3 times.
+v4: inside every stretch of live play, the team is the most likely H/A sequence of a two-state
+hidden Markov model, decoded with Viterbi.
 
-  touch    = sudden change of ball velocity with a player within R_TOUCH, not contested
-  control  = slow ball within R_CONTROL of one team for CONTROL_MIN frames (dribbling)
+  evidence per frame  how much closer one team is to the ball (only when someone is within
+                      EVIDENCE_RADIUS of it), or a reliable Smart Tagging team while the ball is lost
+  change cost         SWITCH_COST, the log of the expected frames between possession changes
 
-While the ball is lost inside live play, the team is kept unless the reliable Smart Tagging phases
-point to the other team for a sustained stretch.
+A change happens only where the evidence for the other team, summed over the following frames,
+outweighs the cost. A defender briefly next to the ball does not pay it; an interception followed
+by half a second of play does. Nearest-player flips ~29 times a minute; real possession changes
+~3 times.
+
+The touch detector of v1-v3 (touch_frames, episodes) is kept: it still names the team at a restart
+and diagnose.py reports on it.
 """
 
 import numpy as np
@@ -88,7 +93,68 @@ def absorb_short(labels, min_len, lo, hi):
     labels[lo:hi] = seg
 
 
+def evidence(f, tags):
+    """Per-frame log-likelihood ratio, positive = home has the ball."""
+    vis, d_home, d_away = f["vis"], f["d_home"], f["d_away"]
+    near = vis & np.isfinite(f["near_d"]) & (f["near_d"] < P.EVIDENCE_RADIUS)
+    lead = np.where(np.isfinite(d_home) & np.isfinite(d_away), d_away - d_home,
+                    np.where(np.isfinite(d_home), P.EVIDENCE_SCALE, -P.EVIDENCE_SCALE))
+    llr = np.where(near, np.clip(lead / P.EVIDENCE_SCALE, -P.EVIDENCE_CAP, P.EVIDENCE_CAP), 0.0)
+    tag = tags["tag_team"]
+    lost = ~vis & (tag != NONE)
+    llr[lost] = np.where(tag[lost] == HOME, P.TAG_EVIDENCE, -P.TAG_EVIDENCE)
+    return llr
+
+
+def viterbi(llr, start):
+    """Most likely H/A path for one live stretch, starting (almost surely) with `start`."""
+    n = len(llr)
+    half = llr / 2.0
+    score = np.array([0.0, 0.0])
+    score[1 - start] = -P.START_PRIOR
+    back = np.zeros((n, 2), dtype=np.int8)       # back[t, s] = state at t-1 on the best path to s
+    for t in range(n):
+        emit = (half[t], -half[t])
+        if t:
+            stay_h, move_h = score[HOME], score[AWAY] - P.SWITCH_COST
+            stay_a, move_a = score[AWAY], score[HOME] - P.SWITCH_COST
+            # On a tie, take the change as LATE as possible: with no evidence either way the old
+            # team keeps the ball, as the scorer itself does when it fills an abstention.
+            back[t, HOME] = HOME if stay_h > move_h else AWAY
+            back[t, AWAY] = AWAY if stay_a > move_a else HOME
+            score = np.array([max(stay_h, move_h), max(stay_a, move_a)])
+        score = score + emit
+    path = np.empty(n, dtype=np.int8)
+    path[-1] = HOME if score[HOME] >= score[AWAY] else AWAY
+    for t in range(n - 1, 0, -1):
+        path[t - 1] = back[t, path[t]]
+    return path
+
+
 def assign(f, dead, tags, halves):
+    """Label codes per frame: 0 H, 1 A, 2 D, -1 outside the halves (v4, Viterbi)."""
+    n = f["n"]
+    labels = np.full(n, NONE, dtype=np.int8)
+    eps = episodes(touch_frames(f))
+    ep_starts = np.array([s for s, _ in eps], dtype=np.int64)
+    ep_teams = np.array([t for _, t in eps], dtype=np.int8)
+    llr = evidence(f, tags)
+
+    for _, first, last in halves:
+        hi = min(last + 1, n)
+        labels[first:hi][dead[first:hi]] = DEAD
+        previous = None
+        for rs, rl in zip(*runs(~dead[first:hi])):
+            s, e = first + int(rs), first + int(rs + rl)
+            start = start_team(s, e, f, ep_starts, ep_teams, tags, previous)
+            labels[s:e] = viterbi(llr[s:e], start)
+            previous = int(labels[e - 1])
+        absorb_short(labels, P.MIN_POSSESSION, first, hi)
+    return labels
+
+
+def assign_events(f, dead, tags, halves):
+    """v1-v3 assignment (switch on touch events), kept for comparison."""
     """Label codes per frame: 0 H, 1 A, 2 D, -1 outside the halves."""
     n = f["n"]
     labels = np.full(n, NONE, dtype=np.int8)
