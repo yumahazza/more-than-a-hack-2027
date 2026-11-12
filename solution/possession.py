@@ -3,8 +3,9 @@
 v4: inside every stretch of live play, the team is the most likely H/A sequence of a two-state
 hidden Markov model, decoded with Viterbi.
 
-  evidence per frame  how much closer one team is to the ball (only when someone is within
-                      EVIDENCE_RADIUS of it), or a reliable Smart Tagging team while the ball is lost
+  evidence per frame  v5: the ball in one team's 1 m possession zone (no evidence in a duel),
+                      a kick credited to a team (worth one change on its own), or a reliable Smart
+                      Tagging team while the ball is lost (see docs/REFERENCES.md)
   change cost         SWITCH_COST, the log of the expected frames between possession changes
 
 A change happens only where the evidence for the other team, summed over the following frames,
@@ -94,12 +95,20 @@ def absorb_short(labels, min_len, lo, hi):
 
 
 def evidence(f, tags):
-    """Per-frame log-likelihood ratio, positive = home has the ball."""
-    vis, d_home, d_away = f["vis"], f["d_home"], f["d_away"]
-    near = vis & np.isfinite(f["near_d"]) & (f["near_d"] < P.EVIDENCE_RADIUS)
-    lead = np.where(np.isfinite(d_home) & np.isfinite(d_away), d_away - d_home,
-                    np.where(np.isfinite(d_home), P.EVIDENCE_SCALE, -P.EVIDENCE_SCALE))
-    llr = np.where(near, np.clip(lead / P.EVIDENCE_SCALE, -P.EVIDENCE_CAP, P.EVIDENCE_CAP), 0.0)
+    """Per-frame log-likelihood ratio, positive = home has the ball (v5).
+
+    - ball in one team's possession zone (1 m), not a duel: +/- EVIDENCE_CAP
+    - a kick credited to a team (not in a duel): +/- KICK_EVIDENCE on that frame
+    - ball lost and a reliable Smart Tagging team: +/- TAG_EVIDENCE
+    - anything else (ball in flight, duel, no information): 0
+    """
+    vis, near_d, team = f["vis"], f["near_d"], f["near_team"]
+    sign = np.where(team == HOME, 1.0, -1.0)
+    zone = vis & np.isfinite(near_d) & (near_d <= P.R_POSSESSION) & ~f["duel"]
+    llr = np.where(zone, sign * P.EVIDENCE_CAP, 0.0)
+    kick = f["kick_team"]
+    llr[kick == HOME] += P.KICK_EVIDENCE
+    llr[kick == AWAY] -= P.KICK_EVIDENCE
     tag = tags["tag_team"]
     lost = ~vis & (tag != NONE)
     llr[lost] = np.where(tag[lost] == HOME, P.TAG_EVIDENCE, -P.TAG_EVIDENCE)
@@ -132,12 +141,13 @@ def viterbi(llr, start):
 
 
 def assign(f, dead, tags, halves):
-    """Label codes per frame: 0 H, 1 A, 2 D, -1 outside the halves (v4, Viterbi)."""
+    """Label codes per frame: 0 H, 1 A, 2 D, -1 outside the halves (v4/v5, Viterbi)."""
     n = f["n"]
     labels = np.full(n, NONE, dtype=np.int8)
-    eps = episodes(touch_frames(f))
-    ep_starts = np.array([s for s, _ in eps], dtype=np.int64)
-    ep_teams = np.array([t for _, t in eps], dtype=np.int8)
+    # v5: the restart team is named by the first KICK after the restart (the restart kick itself)
+    kick_at = np.flatnonzero(f["kick_team"] != NONE)
+    ep_starts = kick_at.astype(np.int64)
+    ep_teams = f["kick_team"][kick_at].astype(np.int8)
     llr = evidence(f, tags)
 
     for _, first, last in halves:

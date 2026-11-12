@@ -101,22 +101,23 @@ def why_dead_missed(gt, labels, f, tag_data, lo, hi):
 
 
 def touches_near_changes(gt, labels, f, lo, hi):
-    print("\n" + "=" * 100 + "\n2b. WHAT THE TOUCH DETECTOR SAW AROUND EACH TEAM CHANGE (+/- 2 s)\n" + "=" * 100)
-    print("impulse = ball velocity changes by > {} m/s. Each impulse is credited to the nearest".format(P.IMPULSE))
-    print("player's team only if he is within {} m AND at least {} m closer than the other team.".format(
-        P.R_TOUCH, P.MARGIN))
-    print("Counts are impulse frames: ok = credited, far = nearest too far, contest = teams too close.")
-    print("ctrl = longest run of frames where the NEW team controls the ball (needs {} frames).".format(
-        P.CONTROL_MIN))
+    print("\n" + "=" * 100 + "\n2b. WHAT THE KICK DETECTOR AND ZONES SAW AROUND EACH TEAM CHANGE (+/- 2 s)\n" + "=" * 100)
+    print("peak = local maximum of the Savitzky-Golay ball acceleration >= {} m/s^2.".format(P.KICK_ACCEL))
+    print("kick = a peak with the nearest player within {} m and no duel (credited to his team);".format(
+        P.R_POSSESSION))
+    print("far = peak with nobody within {} m; duel = peak while both teams are within {} m.".format(
+        P.R_POSSESSION, P.R_DUEL))
+    print("zone = frames with the ball in that team's possession zone (evidence); duel% = duel frames.")
     sec = P.FPS
-    vis, near_d, margin, team = f["vis"], f["near_d"], f["margin"], f["near_team"]
-    imp = vis & (np.nan_to_num(f["impulse"]) > P.IMPULSE) & np.isfinite(near_d)
-    control_raw = (vis & np.isfinite(near_d) & (near_d < P.R_CONTROL)
-                   & (np.nan_to_num(f["speed"], nan=99) < P.CONTROL_SPEED))
-    print("\n{:<8} {:>9} | {:^22} | {:^22} | {:>5} {:>9} {:>10}".format(
-        "change", "ours", "NEW team impulses", "OLD team impulses", "ctrl", "new<1m", "new min d"))
-    print("{:<8} {:>9} | {:>6} {:>6} {:>8} | {:>6} {:>6} {:>8} |".format(
-        "", "", "ok", "far", "contest", "ok", "far", "contest"))
+    vis, near_d, team, duel = f["vis"], f["near_d"], f["near_team"], f["duel"]
+    a_ = np.nan_to_num(f["accel"], nan=0.0)
+    peak = np.zeros(len(a_), dtype=bool)
+    peak[1:-1] = (a_[1:-1] >= a_[:-2]) & (a_[1:-1] > a_[2:])
+    peak &= vis & (a_ >= P.KICK_ACCEL)
+    zone = vis & np.isfinite(near_d) & (near_d <= P.R_POSSESSION) & ~duel
+    print("\n{:<8} {:>9} | {:^18} | {:^18} | {:>6} {:>8} {:>8}".format(
+        "change", "ours", "NEW team", "OLD team", "far", "duel pk", "duel%"))
+    print("{:<8} {:>9} | {:>8} {:>8} | {:>8} {:>8} |".format("", "", "kicks", "zone", "kicks", "zone"))
     for g in range(lo + 1, hi):
         if not (gt[g] in (0, 1) and gt[g - 1] in (0, 1) and gt[g] != gt[g - 1]):
             continue
@@ -125,20 +126,15 @@ def touches_near_changes(gt, labels, f, lo, hi):
         changed = [t for t in range(max(a, lo + 1), min(b, hi))
                    if labels[t] == new and labels[t - 1] == 1 - new]
         status = "{:+.1f} s".format((changed[0] - g) / sec) if changed else "MISSED"
-        counts = {}
+        kt = f["kick_team"][a:b]
+        cols = []
         for side in (new, 1 - new):
-            sel = imp[a:b] & (team[a:b] == side)
-            d, m = near_d[a:b][sel], margin[a:b][sel]
-            ok = (d < P.R_TOUCH) & (m >= P.MARGIN)
-            counts[side] = (int(ok.sum()), int((d >= P.R_TOUCH).sum()),
-                            int(((d < P.R_TOUCH) & (m < P.MARGIN)).sum()))
-        new_d = f["d_home" if new == 0 else "d_away"][a:b][vis[a:b]]
-        ctrl = control_raw[a:b] & (team[a:b] == new)
-        longest = int(runs(ctrl)[1].max()) if ctrl.any() else 0
-        print("{:<8} {:>9} | {:>6} {:>6} {:>8} | {:>6} {:>6} {:>8} | {:>5} {:>8.0f}% {:>8}".format(
-            "-> " + NAME[new], status, *counts[new], *counts[1 - new], longest,
-            100 * np.mean(new_d < 1) if new_d.size else 0,
-            "{:.1f} m".format(np.nanmin(new_d)) if new_d.size and np.isfinite(new_d).any() else "-"))
+            cols += [int(np.sum(kt == side)), int(np.sum(zone[a:b] & (team[a:b] == side)))]
+        far = int(np.sum(peak[a:b] & ~(np.nan_to_num(near_d[a:b], nan=99) <= P.R_POSSESSION)))
+        dpk = int(np.sum(peak[a:b] & duel[a:b]))
+        dshare = 100 * duel[a:b][vis[a:b]].mean() if vis[a:b].any() else 0
+        print("{:<8} {:>9} | {:>8} {:>8} | {:>8} {:>8} | {:>6} {:>8} {:>7.0f}%".format(
+            "-> " + NAME[new], status, *cols, far, dpk, dshare))
 
 
 def main():
@@ -213,14 +209,17 @@ def main():
             "{:.0f}% {}".format(100 * np.mean(nt == CODE[to]), to) if nt.size else "-"))
 
     spurious = [t for t in pred_changes if t not in used]
-    kinds = {"touch (impulse)": 0, "dribble (control)": 0, "tag while ball lost": 0}
+    # what made the model change team there (v5 evidence types)
+    kinds = {"a kick by the new team": 0, "possession-zone frames": 0, "ball lost (tags)": 0}
+    half_s = P.FPS // 2
     for t in spurious:
-        if not f["vis"][t]:
-            kinds["tag while ball lost"] += 1
-        elif np.nan_to_num(f["impulse"][t]) > P.IMPULSE:
-            kinds["touch (impulse)"] += 1
+        new = int(labels[t])
+        if np.any(f["kick_team"][max(t - half_s, 0):t + half_s] == new):
+            kinds["a kick by the new team"] += 1
+        elif not f["vis"][t]:
+            kinds["ball lost (tags)"] += 1
         else:
-            kinds["dribble (control)"] += 1
+            kinds["possession-zone frames"] += 1
     print("\nours team changes not in the ground truth: {}".format(len(spurious)))
     for k, v in kinds.items():
         print("   triggered by {:<22} {}".format(k, v))

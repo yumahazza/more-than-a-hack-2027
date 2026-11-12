@@ -1,6 +1,6 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v4.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v5.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
 Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
@@ -23,7 +23,7 @@ import params as P  # noqa: E402
 from atd import load_arrays  # noqa: E402
 from deadball import detect, runs  # noqa: E402
 from features import compute  # noqa: E402
-from possession import DEAD, NONE, assign, episodes, touch_frames  # noqa: E402
+from possession import DEAD, NONE, assign  # noqa: E402
 import tags as tagging  # noqa: E402
 
 LETTERS = {0: "H", 1: "A", DEAD: "D", NONE: "X"}
@@ -63,9 +63,15 @@ def summary(labels, f, halves):
     print("  possessions: {}   mean {:.1f} s   median {:.1f} s".format(
         n_poss, np.mean(durations) if durations else 0, np.median(durations) if durations else 0))
     print("  dead-ball stretches (runs of D): {}".format(n_dead))
-    eps = episodes(touch_frames(f))
     minutes = graded.sum() / P.FPS / 60
-    print("  touch episodes: {:.1f} per minute".format(len(eps) / minutes))
+    kicks = f["kick_team"][graded]
+    vis_g = f["vis"][graded]
+    print("  kicks credited: {:.1f} per minute (home {:.0f}%)   duel frames: {:.1f}% of ball-visible".format(
+        np.sum(kicks >= 0) / minutes, 100 * np.mean(kicks[kicks >= 0] == 0) if np.any(kicks >= 0) else 0,
+        100 * np.mean(f["duel"][graded][vis_g])))
+    acc = f["accel"][graded][vis_g]
+    print("  ball acceleration (m/s^2, Savitzky-Golay): p50={:.1f} p90={:.1f} p99={:.1f}".format(
+        *np.nanpercentile(acc, [50, 90, 99])))
     act = f["activity_s"][graded]
     vis = f["vis"][graded]
     print("  player activity (m/s, computed) ball visible: p25={:.2f} p50={:.2f} p75={:.2f}".format(
@@ -76,7 +82,7 @@ def summary(labels, f, halves):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v4", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v5", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 

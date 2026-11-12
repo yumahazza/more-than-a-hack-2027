@@ -1,8 +1,9 @@
-"""Every threshold of the v1 solution, in one place, with the reason for its value.
+"""Every threshold of the solution, in one place, with the reason for its value.
 
-Rule we follow (RULES.md / EVALUATION.md): values come from football logic and from aggregate
-statistics of the match data (solution/explore*.py), NEVER from trying values against the public
-5-minute ground truth. Change a value only with a reason you could write in the technical document.
+Rule we follow (RULES.md / EVALUATION.md): values come from football logic, from the literature
+(docs/REFERENCES.md) and from aggregate statistics of the match data (solution/explore*.py), NEVER
+from trying values against the public 5-minute ground truth. Change a value only with a reason you
+could write in the technical document.
 """
 
 FPS = 25
@@ -17,7 +18,22 @@ ACTIVITY_SPAN = 5          # frames each side -> 10-frame (0.4 s) displacement
 MAX_PLAYER_SPEED = 12.0    # m/s; a top sprint is ~10 m/s
 ACTIVITY_SMOOTH = FPS      # +/- 1 s
 
-# -- touches (who plays the ball) ----------------------------------------------------------------
+# -- kicks (v5, from the literature) -------------------------------------------------------------
+# Link & Hoernig (2017): a kick is a local maximum of the SMOOTHED ball acceleration of at least
+# 4 m/s^2, credited to the nearest player within reach. Smoothing as in Vidal-Codina et al. (2022):
+# Savitzky-Golay, 2nd order, 7 frames at 25 Hz; the derivatives come straight from the filter.
+# This replaces the v1-v4 impulse test (3 m/s within 0.12 s, i.e. ~25 m/s^2), which diagnose.py
+# showed almost never fires on the smooth ATD ball.
+SG_WINDOW = 7              # frames
+KICK_ACCEL = 4.0           # m/s^2
+# Possession zone and duel zone, Vidal-Codina et al. (2022): a player possesses the ball when it is
+# within 1 m of him (Tracab and Hawk-Eye; 0.5 m for a third provider); when players of BOTH teams
+# are within 1 m of the ball it is a duel, which overrides possession. The challenge rules agree:
+# a contested ball stays with the last team, so a duel gives no evidence and credits no kick.
+R_POSSESSION = 1.0         # m
+R_DUEL = 1.0               # m
+
+# -- touches (v1-v3 only; kept for assign_events and diagnose.py) --------------------------------
 # A touch is a sudden change of ball velocity with a player close to it. A pass or a deflection
 # changes the velocity by several m/s; tracking noise on the computed speed is well under 1 m/s.
 IMPULSE = 3.0              # m/s change of ball velocity
@@ -81,19 +97,25 @@ MERGE_DEAD = 2 * FPS       # two dead stretches less than 2 s apart are one stop
 # Why: diagnose.py showed the velocity-change ("impulse") touch detector almost never fires at a
 # real change: the ATD ball path is smooth (explore2: speed over 1 frame and over 5 frames have the
 # same distribution), so a touch bends the path over many frames instead of in one.
-# Evidence per frame (log-likelihood ratio, + = home): how much closer one team is to the ball,
-# counted only when someone is near enough to be playing it.
-EVIDENCE_RADIUS = 2.0      # m; a ball further than this from every player is in flight: no evidence
-EVIDENCE_SCALE = 1.0       # m of distance lead per unit of evidence
-EVIDENCE_CAP = 0.5         # per frame; one frame can never decide alone
+# Evidence per frame (log-likelihood ratio, + = home):
+#   v5: EVIDENCE_CAP for the team whose player has the ball in his possession zone (1 m, see above),
+#   zero in a duel or when nobody is within 1 m (ball in flight). v4 used a 2 m radius and a graded
+#   distance lead, two values without a source; the literature zone replaces both.
+EVIDENCE_CAP = 0.5         # per frame; one frame can never decide alone (assumption, no source)
 TAG_EVIDENCE = 0.05        # per frame while the ball is lost and a reliable tag names a team
-# Cost of a team change = log of the expected frames between changes. Professional football
-# possessions last ~10-20 s on average; 15 s = 375 frames -> ln(375) = 5.9. With the cap above, a
-# clear lead (>= 0.5 m) needs ~0.5 s of play to justify a change, so a short real possession
-# (one touch, a header) can still appear, while brief closeness of a defender cannot.
-SWITCH_COST = 5.9
+# Cost of a team change = log of the expected frames between changes; a constant cost per frame
+# is the geometric possession length that Markov models of possession fit (Lopez Pena 2014).
+# v5: mean possession 12 s (was 15 s, no source). FIFA U-20 World Cup 2025 reports possession
+# sequences of 8.8 s on average and 12.0 s for Spain, the most possession-oriented sides being
+# 11.8-12.5 s. This is a Spanish top-flight match with a possession-oriented home side.
+# 12 s = 300 frames -> ln(300) = 5.70. A clear zone lead needs ~0.5 s of play to pay for a change.
+MEAN_POSSESSION_S = 12.0
+SWITCH_COST = 5.70         # = ln(MEAN_POSSESSION_S * FPS)
+# A kick by one team, not in a duel, is one contact, and one contact starts a team possession
+# (Link & Hoernig 2017; also the public ground truth's own definition). It is worth one change.
+KICK_EVIDENCE = SWITCH_COST
 START_PRIOR = 20.0         # the restart team is near certain at the first frame of live play
-START_LOOKAHEAD = 5 * FPS  # after a restart, the first touch within 5 s names the team
+START_LOOKAHEAD = 5 * FPS  # after a restart, the first kick within 5 s names the team
 SETPIECE_WINDOW = 5 * FPS  # a set-piece tag whose window +/- 5 s covers the restart names it too
 GAP_TAG_MIN = 2 * FPS      # while the ball is lost, a tag must point to the other team for 2 s
 MIN_POSSESSION = 5         # frames; shorter runs are absorbed into the previous possession
