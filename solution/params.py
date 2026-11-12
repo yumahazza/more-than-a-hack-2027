@@ -43,7 +43,14 @@ SLOW_PLAYERS = 1.4         # m/s, smoothed mean player speed
 # v2: the ball does not have to be still in a stoppage (it is carried, rolled to the taker). What
 # a stoppage never has is a pass: no ball faster than a short pass within +/- 1 s.
 PASS_SPEED = 6.0           # m/s; a short pass travels at 6-10 m/s
+# v3: a pass (or a restart kick) is fast for a SUSTAINED stretch, not one frame: a ball kicked
+# 6-10 m/s keeps that speed for well over 0.2 s. Single-frame spikes are tracking noise; v2 used a
+# plain max and every spike broke a stoppage or faked a restart.
+FAST_MIN = 5               # frames (0.2 s)
 QUIET_WINDOW = FPS         # +/- 1 s
+# v3: a 5 s walk without a pass is a stoppage only where Smart Tagging does NOT describe a phase of
+# play (explore2: lost-ball stretches covered by phase tags are mostly live play).
+LIVE_TAG_MAX = 0.5         # share of the stretch covered by phase-of-play tags
 STOP_MIN = 3 * FPS         # a stoppage shorter than 3 s is not worth a D (restarts take longer)
 STOP_ALONE = 5 * FPS       # walking players and no pass for 5 s is a stoppage even without a tag
 STOP_LONG = 8 * FPS        # a long quiet stretch with the ball lost is a stoppage even untagged

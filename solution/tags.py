@@ -30,9 +30,11 @@ def build(n, events=None):
     tag_team  (n,) int8   0/1 = team the reliable tags say has the ball, -1 = no clear answer
     setpieces list of {start, end, type, side}   side None for N/A (e.g. every throw-in)
     sp_start  (n,) bool   frame where a set-piece tag starts
+    phase     (n,) bool   frame covered by any team-tagged phase of play
     """
     events = load_smart_tagging.load() if events is None else events
     vote = np.zeros((2, n), dtype=np.float32)
+    phase = np.zeros(n, dtype=bool)     # covered by any team-tagged phase of play
     setpieces = []
     sp_start = np.zeros(n, dtype=bool)
     for e in events:
@@ -52,9 +54,10 @@ def build(n, events=None):
         if code in DEFENDING:
             side = 1 - side   # the tagged team is defending, i.e. does NOT have the ball
         vote[side, s:t] += w
+        phase[s:t] = True
 
     lead = vote[HOME] - vote[AWAY]
     tag_team = np.full(n, -1, dtype=np.int8)
     tag_team[lead >= P.TAG_MARGIN] = HOME
     tag_team[lead <= -P.TAG_MARGIN] = AWAY
-    return {"tag_team": tag_team, "setpieces": setpieces, "sp_start": sp_start}
+    return {"tag_team": tag_team, "setpieces": setpieces, "sp_start": sp_start, "phase": phase}

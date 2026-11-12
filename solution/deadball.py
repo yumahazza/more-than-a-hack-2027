@@ -48,8 +48,13 @@ def rolling_max(x, half):
     return out
 
 
+def sustained(mask, min_len):
+    """Keep only the runs of True that last at least min_len frames."""
+    return drop_short(mask, min_len)
+
+
 def restart_candidates(f):
-    """Frames where a still/held ball is kicked or thrown, inside the pitch."""
+    """First frame of a sustained kick/throw of a still or held ball, inside the pitch."""
     speed = np.nan_to_num(f["speed"], nan=0.0)
     still = ~f["vis"] | (speed < P.RESTART_STILL)
     span = P.RESTART_STILL_SPAN
@@ -57,7 +62,9 @@ def restart_candidates(f):
     i = np.arange(f["n"])
     before = c[i] - c[np.maximum(i - span, 0)]        # still frames among the previous `span`
     held = before >= int(0.8 * span)
-    return f["vis"] & (f["outside"] <= -P.RESTART_INSIDE) & (speed > P.RESTART_SPEED) & held
+    kick = sustained(f["vis"] & (speed > P.RESTART_SPEED), P.FAST_MIN)
+    kick_start = kick & ~np.concatenate(([False], kick[:-1]))
+    return kick_start & (f["outside"] <= -P.RESTART_INSIDE) & held
 
 
 def find_restart(f, cand, tags, origin, start, stop):
@@ -93,10 +100,11 @@ def detect(f, tags, halves):
 
     # 2. stoppages: players walking and no pass
     slow = np.nan_to_num(f["activity_s"], nan=np.inf) < P.SLOW_PLAYERS
-    fastest = rolling_max(np.nan_to_num(speed, nan=0.0), P.QUIET_WINDOW)
-    quiet_ball = ~vis | (fastest < P.PASS_SPEED)
+    passing = sustained(vis & (np.nan_to_num(speed, nan=0.0) > P.PASS_SPEED), P.FAST_MIN)
+    quiet_ball = ~rolling_max(passing, P.QUIET_WINDOW)     # no pass within +/- 1 s
     quiet = close_holes(slow & quiet_ball, P.CLOSE_HOLES)
     sp = tags["sp_start"]
+    phase = tags["phase"]
     for s, l in zip(*runs(quiet)):
         if l < P.STOP_MIN:
             continue
@@ -104,8 +112,9 @@ def detect(f, tags, halves):
         lost = (~vis[s:e]).mean()
         evidence = (sp[max(s - P.STOP_EVIDENCE, 0):min(e + P.STOP_EVIDENCE, n)].any()
                     or oob[max(s - 3 * P.FPS, 0):e].any()
-                    or (l >= P.STOP_LONG and lost > 0.5))
-        if not (evidence or l >= P.STOP_ALONE):
+                    or (l >= P.STOP_LONG and lost > 0.5 and phase[s:e].mean() <= P.LIVE_TAG_MAX))
+        alone = l >= P.STOP_ALONE and phase[s:e].mean() <= P.LIVE_TAG_MAX
+        if not (evidence or alone):
             continue
         # the stoppage lasts until the restart (players may jog into position before it)
         restart = find_restart(f, cand, tags, s, max(s + P.FPS, e - P.FPS), e + P.STOP_EXTEND)
