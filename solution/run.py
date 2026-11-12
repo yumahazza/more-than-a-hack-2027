@@ -1,6 +1,6 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v1.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v2.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
 Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
@@ -49,7 +49,7 @@ def summary(labels, f, halves):
     for _, first, last in halves:
         graded[first:last + 1] = True
     g = labels[graded]
-    print("\nringkasan (frame dinilai: {})".format(int(graded.sum())))
+    print("\nsummary (graded frames: {})".format(int(graded.sum())))
     for code in (0, 1, DEAD, NONE):
         print("  {}  {:6.1f}%".format(LETTERS[code], 100.0 * np.mean(g == code)))
     n_poss, durations, n_dead = 0, [], 0
@@ -60,23 +60,23 @@ def summary(labels, f, halves):
             n_poss += len(starts)
             durations += list(lengths / P.FPS)
         n_dead += len(runs(seg == DEAD)[0])
-    print("  possession: {}   rata-rata {:.1f} s   median {:.1f} s".format(
+    print("  possessions: {}   mean {:.1f} s   median {:.1f} s".format(
         n_poss, np.mean(durations) if durations else 0, np.median(durations) if durations else 0))
-    print("  bola mati (rangkaian D): {}".format(n_dead))
+    print("  dead-ball stretches (runs of D): {}".format(n_dead))
     eps = episodes(touch_frames(f))
     minutes = graded.sum() / P.FPS / 60
-    print("  episode sentuhan: {:.1f} per menit".format(len(eps) / minutes))
+    print("  touch episodes: {:.1f} per minute".format(len(eps) / minutes))
     act = f["activity_s"][graded]
     vis = f["vis"][graded]
-    print("  aktivitas pemain (m/s, dihitung) bola terlihat: p25={:.2f} p50={:.2f} p75={:.2f}".format(
+    print("  player activity (m/s, computed) ball visible: p25={:.2f} p50={:.2f} p75={:.2f}".format(
         *np.nanpercentile(act[vis], [25, 50, 75])))
-    print("  aktivitas pemain (m/s, dihitung) bola hilang:   p25={:.2f} p50={:.2f} p75={:.2f}".format(
+    print("  player activity (m/s, computed) ball missing: p25={:.2f} p50={:.2f} p75={:.2f}".format(
         *np.nanpercentile(act[~vis], [25, 50, 75])))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v1", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v2", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 
@@ -89,10 +89,10 @@ def main():
     path = os.path.join(args.out, args.name + ".csv")
     write_csv(path, labels)
     summary(labels, f, halves)
-    print("\nditulis: {}".format(os.path.relpath(path, ROOT)))
-    print("cek:     .\\.venv\\Scripts\\python.exe evaluation\\validate_submission.py {}".format(
+    print("\nwritten:  {}".format(os.path.relpath(path, ROOT)))
+    print("validate: .\\.venv\\Scripts\\python.exe evaluation\\validate_submission.py {}".format(
         os.path.relpath(path, ROOT)))
-    print("skor:    .\\.venv\\Scripts\\python.exe evaluation\\run_evaluation.py")
+    print("score:    .\\.venv\\Scripts\\python.exe evaluation\\run_evaluation.py")
 
 
 if __name__ == "__main__":

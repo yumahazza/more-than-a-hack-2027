@@ -24,7 +24,8 @@ def touch_frames(f):
     vis, near_d, margin = f["vis"], f["near_d"], f["margin"]
     clear = vis & np.isfinite(near_d) & (margin >= P.MARGIN)
     impulse = clear & (np.nan_to_num(f["impulse"]) > P.IMPULSE) & (near_d < P.R_TOUCH)
-    control = clear & (near_d < P.R_CONTROL) & (np.nan_to_num(f["speed"], nan=99) < P.CONTROL_SPEED)
+    control = (vis & np.isfinite(near_d) & (margin >= P.CONTROL_MARGIN) & (near_d < P.R_CONTROL)
+               & (np.nan_to_num(f["speed"], nan=99) < P.CONTROL_SPEED))
 
     team = f["near_team"]
     out = np.full(f["n"], NONE, dtype=np.int8)

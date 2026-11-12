@@ -1,10 +1,12 @@
 """Which frames are dead ball (D).
 
 Three sources, combined:
-  1. ball out of play  -- the ball crosses a line; dead until the restart kick/throw
-  2. stoppage          -- players slow and the ball still or lost, for long enough, with evidence
-                          (a set-piece tag nearby, the ball going out, or a long lost-ball stretch)
+  1. ball out of play  -- the ball crosses a line; dead until the restart
+  2. stoppage          -- players walking and no pass, for long enough; dead until the restart
   3. before kick-off   -- from the start of a half until the ball is kicked from the centre
+
+A restart is a kick or throw of a ball that was still or held: fast ball, inside the pitch, after
+at least 0.5 s of a slow (or untracked) ball, and not before a set-piece tag that covers it.
 """
 
 import numpy as np
@@ -37,15 +39,36 @@ def drop_short(mask, min_len):
     return out
 
 
-def find_restart(f, start, stop):
-    """First frame in [start, stop) where the ball is back inside the pitch and moving fast."""
+def rolling_max(x, half):
+    """Centred max over +/- half frames."""
+    out = x.copy()
+    for k in range(1, half + 1):
+        out[k:] = np.maximum(out[k:], x[:-k])
+        out[:-k] = np.maximum(out[:-k], x[k:])
+    return out
+
+
+def restart_candidates(f):
+    """Frames where a still/held ball is kicked or thrown, inside the pitch."""
+    speed = np.nan_to_num(f["speed"], nan=0.0)
+    still = ~f["vis"] | (speed < P.RESTART_STILL)
+    span = P.RESTART_STILL_SPAN
+    c = np.concatenate(([0], np.cumsum(still)))
+    i = np.arange(f["n"])
+    before = c[i] - c[np.maximum(i - span, 0)]        # still frames among the previous `span`
+    held = before >= int(0.8 * span)
+    return f["vis"] & (f["outside"] <= -P.RESTART_INSIDE) & (speed > P.RESTART_SPEED) & held
+
+
+def find_restart(f, cand, tags, origin, start, stop):
+    """First restart in [start, stop). A set-piece tag starting after `origin` must have begun."""
     stop = min(stop, f["n"])
+    tagged = [s["start"] for s in tags["setpieces"] if origin <= s["start"] < stop]
+    if tagged:
+        start = max(start, min(tagged))
     if start >= stop:
         return None
-    seg = slice(start, stop)
-    ok = (f["vis"][seg] & (f["outside"][seg] <= -P.RESTART_INSIDE)
-          & (f["speed"][seg] > P.RESTART_SPEED))
-    hit = np.flatnonzero(ok)
+    hit = np.flatnonzero(cand[start:stop])
     return start + int(hit[0]) if hit.size else None
 
 
@@ -53,6 +76,7 @@ def detect(f, tags, halves):
     """Boolean dead-ball mask over all frames. `halves` = [(half, first, last)] video frames."""
     n = f["n"]
     vis, speed = f["vis"], f["speed"]
+    cand = restart_candidates(f)
     dead = np.zeros(n, dtype=bool)
     in_play = np.zeros(n, dtype=bool)
     for _, first, last in halves:
@@ -63,13 +87,14 @@ def detect(f, tags, halves):
     oob = drop_short(oob, P.OOB_MIN)
     oob_starts, _ = runs(oob)
     for o in oob_starts:
-        restart = find_restart(f, o + P.RESTART_MIN_DELAY, o + P.RESTART_MAX)
+        restart = find_restart(f, cand, tags, o, o + P.RESTART_MIN_DELAY, o + P.RESTART_MAX)
         end = restart if restart is not None else min(o + P.OOB_FALLBACK, n)
         dead[o:end] = True
 
-    # 2. stoppages
+    # 2. stoppages: players walking and no pass
     slow = np.nan_to_num(f["activity_s"], nan=np.inf) < P.SLOW_PLAYERS
-    quiet_ball = ~vis | (np.nan_to_num(speed, nan=0.0) < P.BALL_STILL)
+    fastest = rolling_max(np.nan_to_num(speed, nan=0.0), P.QUIET_WINDOW)
+    quiet_ball = ~vis | (fastest < P.PASS_SPEED)
     quiet = close_holes(slow & quiet_ball, P.CLOSE_HOLES)
     sp = tags["sp_start"]
     for s, l in zip(*runs(quiet)):
@@ -80,8 +105,11 @@ def detect(f, tags, halves):
         evidence = (sp[max(s - P.STOP_EVIDENCE, 0):min(e + P.STOP_EVIDENCE, n)].any()
                     or oob[max(s - 3 * P.FPS, 0):e].any()
                     or (l >= P.STOP_LONG and lost > 0.5))
-        if evidence:
-            dead[s:e] = True
+        if not (evidence or l >= P.STOP_ALONE):
+            continue
+        # the stoppage lasts until the restart (players may jog into position before it)
+        restart = find_restart(f, cand, tags, s, max(s + P.FPS, e - P.FPS), e + P.STOP_EXTEND)
+        dead[s:max(e, restart or e)] = True
 
     # 3. before each half's kick-off
     lx, ly = f["length"] / 2, f["width"] / 2

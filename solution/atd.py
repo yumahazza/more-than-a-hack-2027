@@ -90,12 +90,12 @@ def load_arrays(game=GAME, data_dir=None, use_cache=True, verbose=True):
             return {k: z[k] for k in ("ball", "players", "team")}
 
     if verbose:
-        print("membaca {} (sekali saja, lalu disimpan ke cache) ...".format(
+        print("reading {} (once; the result is cached) ...".format(
             os.path.basename(raw_path)))
     arrays = parse(meta_path, raw_path, source_frames("tactical", game), GAMES[game]["pitch"])
     if use_cache:
         os.makedirs(cache_dir, exist_ok=True)
         np.savez(cache_path, **arrays)
         if verbose:
-            print("cache disimpan: {}".format(os.path.relpath(cache_path, ROOT)))
+            print("cache saved: {}".format(os.path.relpath(cache_path, ROOT)))
     return arrays

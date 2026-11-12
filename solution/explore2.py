@@ -1,13 +1,14 @@
-"""Tahap 1.3 (lanjutan) -- dua pertanyaan dari explore.py.
+"""Stage 1.3 (continued): two questions raised by explore.py.
 
     .\\.venv\\Scripts\\python.exe solution\\explore2.py
 
-A. Kecepatan bola di ATD tidak pernah > 10 m/s. Apakah kolomnya aneh, atau posisi bolanya sendiri
-   yang diperhalus / menempel ke pemain? -> hitung kecepatan sendiri dari perpindahan posisi.
-B. Bola hilang dalam lubang panjang (median ~11 s). Selama lubang itu bola mati atau masih main?
-C. Di mana bola terakhir terlihat sebelum lubang, dan di mana muncul lagi sesudahnya?
+A. The ATD ball speed is never above 10 m/s. Is the column odd, or are the ball positions
+   themselves smoothed / stuck to players? -> compute the speed ourselves from the positions.
+B. The ball goes missing in long gaps (median ~11 s). During those gaps, is the ball dead or still
+   in play?
+C. Where is the ball last seen before a gap, and where does it reappear after it?
 
-Sama seperti explore.py: hanya angka ringkasan, tanpa ground truth, tanpa output per frame.
+Same as explore.py: summary numbers only, no ground truth, nothing printed per frame.
 """
 
 import os
@@ -47,10 +48,10 @@ def main():
     visible = np.isfinite(ball[:, 0]) & np.isfinite(ball[:, 1])
     bx, by = ball[:, 0], ball[:, 1]
 
-    # -- A. kecepatan bola dihitung sendiri ------------------------------------------------------
-    header("A. KECEPATAN BOLA DIHITUNG DARI PERPINDAHAN POSISI")
-    for lag, name in ((1, "antar 1 frame (0,04 s)"), (5, "antar 5 frame (0,2 s)"),
-                      (25, "antar 25 frame (1 s)")):
+    # -- A. ball speed computed from positions ---------------------------------------------------
+    header("A. BALL SPEED COMPUTED FROM DISPLACEMENT")
+    for lag, name in ((1, "over 1 frame (0.04 s)"), (5, "over 5 frames (0.2 s)"),
+                      (25, "over 25 frames (1 s)")):
         ok = visible[lag:] & visible[:-lag] & graded[lag:] & graded[:-lag]
         step = np.hypot(bx[lag:] - bx[:-lag], by[lag:] - by[:-lag])[ok]
         speed = step * FPS / lag
@@ -60,9 +61,9 @@ def main():
 
     ok1 = visible[1:] & visible[:-1] & graded[1:]
     step1 = np.hypot(np.diff(bx), np.diff(by))[ok1]
-    print("lompatan antar frame > 2 m (= >50 m/s, tidak mungkin secara fisik): {}".format(
+    print("jumps > 2 m between frames (= >50 m/s, physically impossible): {}".format(
         pct(np.mean(step1 > 2))))
-    print("bola tidak bergerak sama sekali antar frame (< 1 cm): {}".format(
+    print("ball not moving at all between frames (< 1 cm): {}".format(
         pct(np.mean(step1 < 0.01))))
 
     col = ball[1:, 2][ok1]
@@ -71,24 +72,24 @@ def main():
     if good.any():
         ratio = col[good] / calc[good]
         corr = np.corrcoef(col[good], calc[good])[0, 1]
-        print("kolom kecepatan bola / kecepatan dihitung: " + percentiles(ratio))
-        print("korelasi kolom vs dihitung: {:.2f}  (1 = searah sempurna)".format(corr))
+        print("ATD ball speed column / computed speed: " + percentiles(ratio))
+        print("correlation column vs computed: {:.2f}  (1 = perfectly in step)".format(corr))
 
     dist = np.hypot(players[:, :, 0] - bx[:, None], players[:, :, 1] - by[:, None])
     nearest = np.nanmin(dist, axis=1)
     okn = visible & graded & np.isfinite(nearest)
-    print("bola 'menempel' pemain (jarak < 0,1 m): {}   (< 0,3 m): {}".format(
+    print("ball 'stuck' to a player (distance < 0.1 m): {}   (< 0.3 m): {}".format(
         pct(np.mean(nearest[okn] < 0.1)), pct(np.mean(nearest[okn] < 0.3))))
     near_speed = np.take_along_axis(
         players[:, :, 2], np.nanargmin(np.where(np.isfinite(dist), dist, np.inf), axis=1)[:, None],
         axis=1)[:, 0]
     both = okn & np.isfinite(near_speed) & np.isfinite(ball[:, 2])
     if both.any():
-        print("korelasi kecepatan bola (kolom) vs kecepatan pemain terdekat: {:.2f}".format(
+        print("correlation ball speed (column) vs nearest player speed: {:.2f}".format(
             np.corrcoef(ball[both, 2], near_speed[both])[0, 1]))
 
-    # -- B. isi lubang panjang -------------------------------------------------------------------
-    header("B. LUBANG PANJANG (bola hilang >= 5 s, frame dinilai)")
+    # -- B. what happens inside long gaps --------------------------------------------------------
+    header("B. LONG GAPS (ball missing >= 5 s, graded frames)")
     events = load_smart_tagging.load()
     live_tag = np.zeros(n, dtype=bool)          # frame covered by any team-tagged phase
     sp_start = np.zeros(n, dtype=bool)          # frame where a set-piece tag starts
@@ -128,7 +129,7 @@ def main():
         ))
 
     if not rows:
-        print("tidak ada lubang panjang")
+        print("no long gaps")
         return
     L = np.array([r["length"] for r in rows])
     live = np.array([r["live_frac"] for r in rows])
@@ -136,59 +137,59 @@ def main():
     spi = np.array([r["sp_inside"] for r in rows])
     outb = np.array([r["out_before"] for r in rows])
     gspeed = np.array([r["speed"] for r in rows])
-    print("jumlah lubang panjang: {}   total frame: {}".format(len(rows), int(L.sum())))
+    print("number of long gaps: {}   total frames: {}".format(len(rows), int(L.sum())))
 
     vis_g = visible & graded
     miss_g = ~visible & graded
-    print("\nporsi frame yang tertutup tag fase permainan (= indikasi bola masih main):")
-    print("  saat bola terlihat: {}   saat bola hilang: {}".format(
+    print("\nshare of frames covered by a phase-of-play tag (= sign the ball is still in play):")
+    print("  ball visible: {}   ball missing: {}".format(
         pct(live_tag[vis_g].mean()), pct(live_tag[miss_g].mean())))
-    print("rata-rata kecepatan pemain (m/s):")
-    print("  saat bola terlihat: {}".format(percentiles(mean_speed[vis_g])))
-    print("  saat bola hilang:   {}".format(percentiles(mean_speed[miss_g])))
+    print("mean player speed (m/s):")
+    print("  ball visible: {}".format(percentiles(mean_speed[vis_g])))
+    print("  ball missing: {}".format(percentiles(mean_speed[miss_g])))
 
-    print("\nper lubang (n = jumlah lubang, frame = porsi frame lubang):")
-    print("  {:<52} {:>5} {:>8}".format("ciri", "n", "frame"))
+    print("\nper gap (n = number of gaps, frames = share of gap frames):")
+    print("  {:<52} {:>5} {:>8}".format("feature", "n", "frames"))
 
     def line(name, sel):
         print("  {:<52} {:>5} {:>8}".format(name, int(sel.sum()), pct(L[sel].sum() / L.sum())))
 
-    line("set piece dimulai di dalam lubang", spi)
-    line("set piece dimulai dekat akhir lubang (-10 s..+5 s)", spe)
-    line("bola keluar garis 1 s sebelum lubang", outb)
-    line(">= 50% lubang tertutup tag fase permainan", live >= .5)
-    line("< 10% lubang tertutup tag fase permainan", live < .1)
-    line("pemain rata-rata pelan (< 1,5 m/s) selama lubang", gspeed < 1.5)
+    line("set piece starts inside the gap", spi)
+    line("set piece starts near the gap end (-10 s..+5 s)", spe)
+    line("ball out of play in the 1 s before the gap", outb)
+    line(">= 50% of the gap covered by a phase tag", live >= .5)
+    line("< 10% of the gap covered by a phase tag", live < .1)
+    line("players slow on average (< 1.5 m/s) during the gap", gspeed < 1.5)
     dead_like = spe | spi | outb
-    line("ADA tanda bola mati (set piece / bola keluar)", dead_like)
-    line("TIDAK ada tanda bola mati DAN >= 50% tertutup tag", ~dead_like & (live >= .5))
+    line("HAS a dead-ball sign (set piece / ball out)", dead_like)
+    line("NO dead-ball sign AND >= 50% covered by a tag", ~dead_like & (live >= .5))
 
-    print("\nmenurut panjang lubang:")
-    print("  {:<14} {:>4} {:>18} {:>16} {:>16}".format(
-        "panjang", "n", "ada tanda mati", "tag main >=50%", "pemain pelan"))
+    print("\nby gap length:")
+    print("  {:<14} {:>4} {:>16} {:>16} {:>14}".format(
+        "length", "n", "dead-ball sign", "tag >=50%", "players slow"))
     for lo, hi, name in ((125, 250, "5-10 s"), (251, 500, "10-20 s"), (501, 1500, "20-60 s"),
                          (1501, 10 ** 9, "> 60 s")):
         sel = (L >= lo) & (L <= hi)
         if sel.any():
-            print("  {:<14} {:>4} {:>18} {:>16} {:>16}".format(
+            print("  {:<14} {:>4} {:>16} {:>16} {:>14}".format(
                 name, int(sel.sum()), int(dead_like[sel].sum()), int((live[sel] >= .5).sum()),
                 int((gspeed[sel] < 1.5).sum())))
 
-    # -- C. sebelum dan sesudah lubang -----------------------------------------------------------
-    header("C. POSISI BOLA SEBELUM DAN SESUDAH LUBANG PANJANG")
+    # -- C. before and after a gap ---------------------------------------------------------------
+    header("C. BALL POSITION BEFORE AND AFTER A LONG GAP")
     last_line = np.array([r["last_line"] for r in rows])
     last_box = np.array([r["last_box"] for r in rows])
     reap_line = np.array([r["reap_line"] for r in rows])
     reap_centre = np.array([r["reap_centre"] for r in rows])
-    print("terakhir terlihat - jarak ke garis (m): " + percentiles(last_line))
-    print("  dalam 2 m dari garis / di luar: {}   di kotak penalti: {}".format(
+    print("last seen - distance to a line (m): " + percentiles(last_line))
+    print("  within 2 m of a line / outside: {}   in a penalty box: {}".format(
         pct(np.nanmean(last_line < 2)), pct(np.mean(last_box))))
-    print("muncul lagi (dalam 10 s) - jarak ke garis (m): " + percentiles(reap_line))
-    print("  dalam 2 m dari garis / di luar: {}   dekat titik tengah (kick-off): {}".format(
+    print("reappears (within 10 s) - distance to a line (m): " + percentiles(reap_line))
+    print("  within 2 m of a line / outside: {}   near the centre spot (kick-off): {}".format(
         pct(np.nanmean(reap_line < 2)), pct(np.mean(reap_centre))))
-    print("  tidak muncul dalam 10 s: {}".format(pct(np.mean(np.isnan(reap_line)))))
+    print("  does not reappear within 10 s: {}".format(pct(np.mean(np.isnan(reap_line)))))
 
-    print("\nselesai. Semua angka di atas ringkasan; aman dibagikan ke tim.")
+    print("\ndone. Every number above is a summary; safe to share with the team.")
 
 
 if __name__ == "__main__":

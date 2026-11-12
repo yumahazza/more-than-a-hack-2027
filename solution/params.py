@@ -21,11 +21,16 @@ ACTIVITY_SMOOTH = FPS      # +/- 1 s
 # A touch is a sudden change of ball velocity with a player close to it. A pass or a deflection
 # changes the velocity by several m/s; tracking noise on the computed speed is well under 1 m/s.
 IMPULSE = 3.0              # m/s change of ball velocity
-R_TOUCH = 1.5              # m from the ball (foot reach + the 2-D projection error of a ball in air)
+# v2: 2.0 m (was 1.5). A tracked player is the centre of the body; a stretched leg plus the 2-D
+# projection error of a ball off the ground put the ball up to ~2 m from it at the touch.
+R_TOUCH = 2.0              # m from the ball
 # Dribbling: a slow ball staying close to one player is controlled by him even without an impulse.
 R_CONTROL = 1.0            # m
 CONTROL_SPEED = 4.0        # m/s; faster than a jog-dribble means the ball is travelling
-CONTROL_MIN = 5            # frames (0.2 s) of continuous control
+# v2: 0.6 s and a clear 1 m lead (was 0.2 s / 0.4 m). A defender standing next to a slow ball for a
+# moment is not dribbling it; a player in control keeps it close over several touches.
+CONTROL_MIN = 15           # frames (0.6 s) of continuous control
+CONTROL_MARGIN = 1.0       # m closer than the nearest opponent
 # If both teams are about equally close, the ball is contested: the rules say possession stays with
 # the last team, so no touch is credited.
 MARGIN = 0.4               # m
@@ -33,16 +38,27 @@ MARGIN = 0.4               # m
 # -- dead ball -----------------------------------------------------------------------------------
 # explore.py: median mean-player speed is ~2 m/s with the ball in view and ~1 m/s while it is lost
 # (mostly stoppages). Walking pace is ~1.2 m/s.
-SLOW_PLAYERS = 1.2         # m/s, smoothed mean player speed
-BALL_STILL = 1.0           # m/s; a ball placed for a restart
+# v2: 1.4 m/s (was 1.2), the usual human walking speed. In a stoppage (foul, injury) players walk.
+SLOW_PLAYERS = 1.4         # m/s, smoothed mean player speed
+# v2: the ball does not have to be still in a stoppage (it is carried, rolled to the taker). What
+# a stoppage never has is a pass: no ball faster than a short pass within +/- 1 s.
+PASS_SPEED = 6.0           # m/s; a short pass travels at 6-10 m/s
+QUIET_WINDOW = FPS         # +/- 1 s
 STOP_MIN = 3 * FPS         # a stoppage shorter than 3 s is not worth a D (restarts take longer)
+STOP_ALONE = 5 * FPS       # walking players and no pass for 5 s is a stoppage even without a tag
 STOP_LONG = 8 * FPS        # a long quiet stretch with the ball lost is a stoppage even untagged
+STOP_EXTEND = 15 * FPS     # a stoppage lasts until the restart, looked for up to 15 s later
 STOP_EVIDENCE = 10 * FPS   # a set piece tag starting within +/- 10 s supports a stoppage
 CLOSE_HOLES = FPS          # holes <= 1 s inside a quiet stretch are closed
 # Ball out of play: explore.py found 81 out-of-bounds runs, median 21 frames.
 OOB_MARGIN = 0.3           # m beyond the line, to stay clear of noise at the line
 OOB_MIN = 3                # frames
-RESTART_SPEED = 3.0        # m/s; a restart kick/throw
+# v2: a restart is a KICK OR THROW OF A BALL THAT WAS STILL (or held, i.e. lost by the tracker).
+# v1 took any ball moving at 3 m/s back inside the pitch, which fired while the ball was being
+# carried back for a goal kick.
+RESTART_SPEED = 5.0        # m/s
+RESTART_STILL = 1.5        # m/s; the ball before the restart is placed or held ...
+RESTART_STILL_SPAN = FPS // 2  # ... for at least 0.5 s
 RESTART_INSIDE = 0.5       # m inside the pitch
 RESTART_MIN_DELAY = 2 * FPS  # no restart can follow a ball going out in under 2 s
 RESTART_MAX = 60 * FPS     # give up looking after 60 s
