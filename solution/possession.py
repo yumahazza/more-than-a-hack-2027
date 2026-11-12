@@ -104,7 +104,7 @@ def evidence(f, tags):
     """
     vis, near_d, team = f["vis"], f["near_d"], f["near_team"]
     sign = np.where(team == HOME, 1.0, -1.0)
-    zone = vis & np.isfinite(near_d) & (near_d <= P.R_POSSESSION) & ~f["duel"]
+    zone = vis & np.isfinite(near_d) & (near_d <= f["r_zone"]) & ~f["duel"]
     llr = np.where(zone, sign * P.EVIDENCE_CAP, 0.0)
     kick = f["kick_team"]
     llr[kick == HOME] += P.KICK_EVIDENCE

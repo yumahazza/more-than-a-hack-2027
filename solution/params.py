@@ -30,8 +30,29 @@ KICK_ACCEL = 4.0           # m/s^2
 # within 1 m of him (Tracab and Hawk-Eye; 0.5 m for a third provider); when players of BOTH teams
 # are within 1 m of the ball it is a duel, which overrides possession. The challenge rules agree:
 # a contested ball stays with the last team, so a duel gives no evidence and credits no kick.
-R_POSSESSION = 1.0         # m
-R_DUEL = 1.0               # m
+R_POSSESSION = 1.0         # m  (v5 value; v6 uses it as the floor of the calibrated radius)
+R_DUEL = 1.0               # m  (v5 value; v6 uses the calibrated possession radius)
+
+# -- per-provider calibration (v6) ---------------------------------------------------------------
+# v5 showed the literature VALUES do not transfer to our automatic ATD: the median smoothed ball
+# acceleration is already 5.7 m/s^2 (above the 4 m/s^2 kick threshold set on cleaned TRACAB data),
+# and the ball is within 1 m of a player on only 28.5% of visible frames. Vidal-Codina et al. (2022)
+# use a different possession radius per tracking provider and recommend tuning per provider. We
+# keep the literature's STRUCTURE and set the values from the distribution of this match's own
+# tracking data, without any labels (unsupervised; the public ground truth is not used).
+#
+# Possession zone: it must contain the ball on most frames where a player plainly has it. Sample:
+# ball visible, slow (a ball at a player's feet, not travelling), players active (live play, not
+# a placed ball at a stoppage). Radius = the CAL_ZONE_PCT percentile of the nearest-player distance
+# in that sample, never below the literature 1 m and never above CAL_ZONE_MAX.
+CAL_SLOW_BALL = 2.0        # m/s; a dribbled or received ball, not a pass
+CAL_ZONE_PCT = 75          # % of those frames the zone must cover
+CAL_ZONE_MAX = 2.5         # m; beyond this the "zone" would cover a neighbour too
+# Duel zone = the calibrated possession zone (Vidal-Codina et al.: duel radius >= possession radius).
+# Kick: a kick must stand out of this provider's acceleration noise, as 4 m/s^2 did for TRACAB.
+# Threshold = the CAL_KICK_PCT percentile of the smoothed acceleration over ball-visible frames,
+# never below the literature 4 m/s^2.
+CAL_KICK_PCT = 90
 
 # -- touches (v1-v3 only; kept for assign_events and diagnose.py) --------------------------------
 # A touch is a sudden change of ball velocity with a player close to it. A pass or a deflection

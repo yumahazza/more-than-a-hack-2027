@@ -51,23 +51,40 @@ def savgol(x, window, deriv):
     return out
 
 
-def kick_frames(bx, by, vis, near_d, near_team, duel, window, threshold, reach, fps):
+def ball_acceleration(bx, by, window, fps):
+    """Magnitude of the Savitzky-Golay ball acceleration, m/s^2."""
+    return np.hypot(savgol(bx, window, 2), savgol(by, window, 2)) * fps * fps
+
+
+def kick_frames(acc, vis, near_d, near_team, duel, threshold, reach):
     """Per frame: the team credited with a kick (0/1), or -1.
 
     Link & Hoernig (2017): a kick is a local maximum of the smoothed ball acceleration of at least
     `threshold` m/s^2, given to the nearest player if he is within reach. A kick inside a duel is
     contested and credited to nobody.
     """
-    ax = savgol(bx, window, 2) * fps * fps
-    ay = savgol(by, window, 2) * fps * fps
-    acc = np.hypot(ax, ay)
     a = np.nan_to_num(acc, nan=0.0)
     peak = np.zeros(len(a), dtype=bool)
     peak[1:-1] = (a[1:-1] >= a[:-2]) & (a[1:-1] > a[2:])
     kick = vis & peak & (a >= threshold) & np.isfinite(near_d) & (near_d <= reach) & ~duel
     out = np.full(len(a), -1, dtype=np.int8)
     out[kick] = near_team[kick]
-    return out, acc
+    return out
+
+
+def calibrate(vis, speed, near_d, activity_s, acc):
+    """v6: possession radius and kick threshold from this match's own distributions (no labels)."""
+    slow_live = (vis & np.isfinite(near_d) & (np.nan_to_num(speed, nan=99) < P.CAL_SLOW_BALL)
+                 & (np.nan_to_num(activity_s, nan=0) >= P.SLOW_PLAYERS))
+    if slow_live.sum() >= 100:
+        r = float(np.percentile(near_d[slow_live], P.CAL_ZONE_PCT))
+    else:
+        r = P.R_POSSESSION
+    r = float(np.clip(r, P.R_POSSESSION, P.CAL_ZONE_MAX))
+    a = acc[vis & np.isfinite(acc)]
+    k = float(np.percentile(a, P.CAL_KICK_PCT)) if a.size >= 100 else P.KICK_ACCEL
+    k = max(k, P.KICK_ACCEL)
+    return {"r_zone": r, "r_duel": r, "kick_accel": k, "n_slow_live": int(slow_live.sum())}
 
 
 def rolling_nanmean(x, half):
@@ -119,13 +136,16 @@ def compute(arrays, length, width):
     margin[np.isnan(margin)] = np.inf          # one side not tracked near: no contest
     outside = -np.minimum.reduce([bx, length - bx, by, width - by])   # >0 = metres outside
 
-    # v5: duel zone and kicks (Vidal-Codina et al. 2022; Link & Hoernig 2017)
-    duel = (np.nan_to_num(d_home, nan=np.inf) <= P.R_DUEL) & (np.nan_to_num(d_away, nan=np.inf) <= P.R_DUEL)
-    kick_team, accel = kick_frames(bx, by, vis, near_d, near_team, duel, P.SG_WINDOW,
-                                   P.KICK_ACCEL, P.R_POSSESSION, P.FPS)
+    # v5 structure (Vidal-Codina et al. 2022; Link & Hoernig 2017), v6 values calibrated on this match
+    accel = ball_acceleration(bx, by, P.SG_WINDOW, P.FPS)
+    calib = calibrate(vis, speed, near_d, activity_s, accel)
+    r_duel = calib["r_duel"]
+    duel = (np.nan_to_num(d_home, nan=np.inf) <= r_duel) & (np.nan_to_num(d_away, nan=np.inf) <= r_duel)
+    kick_team = kick_frames(accel, vis, near_d, near_team, duel, calib["kick_accel"], calib["r_zone"])
 
     return {
-        "duel": duel, "kick_team": kick_team, "accel": accel,
+        "duel": duel, "kick_team": kick_team, "accel": accel, "calib": calib,
+        "r_zone": calib["r_zone"],
         "n": len(ball), "vis": vis, "bx": bx, "by": by, "speed": speed, "impulse": impulse,
         "d_home": d_home, "d_away": d_away, "near_d": near_d, "near_team": near_team,
         "margin": margin, "outside": outside, "activity": activity, "activity_s": activity_s,

@@ -1,6 +1,6 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v5.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v6.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
 Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
@@ -64,6 +64,9 @@ def summary(labels, f, halves):
         n_poss, np.mean(durations) if durations else 0, np.median(durations) if durations else 0))
     print("  dead-ball stretches (runs of D): {}".format(n_dead))
     minutes = graded.sum() / P.FPS / 60
+    c = f["calib"]
+    print("  calibrated: possession/duel zone {:.2f} m (from {} slow-ball live frames), "
+          "kick threshold {:.1f} m/s^2".format(c["r_zone"], c["n_slow_live"], c["kick_accel"]))
     kicks = f["kick_team"][graded]
     vis_g = f["vis"][graded]
     print("  kicks credited: {:.1f} per minute (home {:.0f}%)   duel frames: {:.1f}% of ball-visible".format(
@@ -82,7 +85,7 @@ def summary(labels, f, halves):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v5", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v6", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 

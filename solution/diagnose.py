@@ -102,19 +102,19 @@ def why_dead_missed(gt, labels, f, tag_data, lo, hi):
 
 def touches_near_changes(gt, labels, f, lo, hi):
     print("\n" + "=" * 100 + "\n2b. WHAT THE KICK DETECTOR AND ZONES SAW AROUND EACH TEAM CHANGE (+/- 2 s)\n" + "=" * 100)
-    print("peak = local maximum of the Savitzky-Golay ball acceleration >= {} m/s^2.".format(P.KICK_ACCEL))
-    print("kick = a peak with the nearest player within {} m and no duel (credited to his team);".format(
-        P.R_POSSESSION))
-    print("far = peak with nobody within {} m; duel = peak while both teams are within {} m.".format(
-        P.R_POSSESSION, P.R_DUEL))
+    print("peak = local maximum of the Savitzky-Golay ball acceleration >= {:.1f} m/s^2.".format(f["calib"]["kick_accel"]))
+    print("kick = a peak with the nearest player within {:.2f} m and no duel (credited to his team);".format(
+        f["r_zone"]))
+    print("far = peak with nobody within {:.2f} m; duel = peak while both teams are within {:.2f} m.".format(
+        f["r_zone"], f["calib"]["r_duel"]))
     print("zone = frames with the ball in that team's possession zone (evidence); duel% = duel frames.")
     sec = P.FPS
     vis, near_d, team, duel = f["vis"], f["near_d"], f["near_team"], f["duel"]
     a_ = np.nan_to_num(f["accel"], nan=0.0)
     peak = np.zeros(len(a_), dtype=bool)
     peak[1:-1] = (a_[1:-1] >= a_[:-2]) & (a_[1:-1] > a_[2:])
-    peak &= vis & (a_ >= P.KICK_ACCEL)
-    zone = vis & np.isfinite(near_d) & (near_d <= P.R_POSSESSION) & ~duel
+    peak &= vis & (a_ >= f["calib"]["kick_accel"])
+    zone = vis & np.isfinite(near_d) & (near_d <= f["r_zone"]) & ~duel
     print("\n{:<8} {:>9} | {:^18} | {:^18} | {:>6} {:>8} {:>8}".format(
         "change", "ours", "NEW team", "OLD team", "far", "duel pk", "duel%"))
     print("{:<8} {:>9} | {:>8} {:>8} | {:>8} {:>8} |".format("", "", "kicks", "zone", "kicks", "zone"))
@@ -130,7 +130,7 @@ def touches_near_changes(gt, labels, f, lo, hi):
         cols = []
         for side in (new, 1 - new):
             cols += [int(np.sum(kt == side)), int(np.sum(zone[a:b] & (team[a:b] == side)))]
-        far = int(np.sum(peak[a:b] & ~(np.nan_to_num(near_d[a:b], nan=99) <= P.R_POSSESSION)))
+        far = int(np.sum(peak[a:b] & ~(np.nan_to_num(near_d[a:b], nan=99) <= f["r_zone"])))
         dpk = int(np.sum(peak[a:b] & duel[a:b]))
         dshare = 100 * duel[a:b][vis[a:b]].mean() if vis[a:b].any() else 0
         print("{:<8} {:>9} | {:>8} {:>8} | {:>8} {:>8} | {:>6} {:>8} {:>7.0f}%".format(
