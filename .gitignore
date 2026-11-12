@@ -31,10 +31,40 @@ evaluation/scoreboard.csv
 # into actually exists in a fresh clone. Everything they put in it stays out of git.
 data/*
 !data/README.md
+data/**
 
 *.mp4
+*.mkv
+*.avi
+*.mov
 *.gzip
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+*.7z
 *.pl3container
+*.parquet
+*.feather
+*.h5
+*.pkl
+
+# -- secrets & local configs -------------------------------------------------------------------
+.env
+.env.*
+*token*
+*secret*
+*credential*
+*.key
+*.pem
+auth*.json
+
+# -- temporary download / scratch --------------------------------------------------------------
+test_dl/
+scratch/
+tmp/
+temp/
 
 # -- internal documents ---------------------------------------------------------------------------
 # OVERVIEW.md -- the institutional description of the competition -- IS committed. It is the only
