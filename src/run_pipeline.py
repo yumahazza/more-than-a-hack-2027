@@ -1,9 +1,10 @@
-"""End-to-end entry point for the modular possession inference pipelines (v1 & v2).
+"""End-to-end entry point for the modular possession inference pipelines (v1, v2, v3).
 
 Usage:
     python src/run_pipeline.py                  # runs v1_physics_viterbi
     python src/run_pipeline.py --version v2     # runs v2_physics_viterbi
-    python src/run_pipeline_v2.py               # shortcut for v2_physics_viterbi
+    python src/run_pipeline.py --version v3     # runs v3_physics_viterbi
+    python src/run_pipeline_v3.py               # shortcut for v3_physics_viterbi
 """
 
 import argparse
@@ -23,12 +24,14 @@ from src.atd_features import extract_atd_features  # noqa: E402
 from src.atd_loader import load_atd_arrays  # noqa: E402
 from src.possession_model import predict_possession  # noqa: E402
 from src.possession_model_v2 import live_half_blocks, predict_possession_v2  # noqa: E402
+from src.possession_model_v3 import predict_possession_v3  # noqa: E402
 from src.smart_tagging_features import extract_smart_tagging_features  # noqa: E402
 
 RESULTS_DIR = os.path.join(ROOT, "evaluation", "results")
 VERSION_DEFAULTS = {
     "v1": "v1_physics_viterbi",
     "v2": "v2_physics_viterbi",
+    "v3": "v3_physics_viterbi",
 }
 
 
@@ -59,13 +62,15 @@ def run_pipeline(version="v1", name=None, out_dir=RESULTS_DIR, use_cache=True):
 
     t2 = time.perf_counter()
     print(f"[3/4] Extracting ATD physics & proximity features ({version})...")
-    blocks = live_half_blocks(st_feats, atd["n_frames"], game=GAME) if version == "v2" else None
+    blocks = live_half_blocks(st_feats, atd["n_frames"], game=GAME) if version in ("v2", "v3") else None
     atd_feats = extract_atd_features(atd, active_blocks=blocks)
     print(f"      done in {time.perf_counter() - t2:.2f}s")
 
     t3 = time.perf_counter()
     print(f"[4/4] Running {version} possession decoder & writing {stem}.csv...")
-    if version == "v2":
+    if version == "v3":
+        labels = predict_possession_v3(atd_feats, st_feats, game=GAME)
+    elif version == "v2":
         labels = predict_possession_v2(atd_feats, st_feats, game=GAME)
     else:
         labels = predict_possession(atd_feats, st_feats, game=GAME)
@@ -87,7 +92,7 @@ def run_pipeline(version="v1", name=None, out_dir=RESULTS_DIR, use_cache=True):
 
 def main(default_version="v1"):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--version", choices=("v1", "v2"), default=default_version,
+    parser.add_argument("--version", choices=("v1", "v2", "v3"), default=default_version,
                         help="model version to run")
     parser.add_argument("--name", default=None,
                         help="output submission stem (without .csv)")

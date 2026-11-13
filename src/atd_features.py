@@ -82,6 +82,21 @@ def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5, active_blocks
     # Only keep smoothed speed where ball is actually visible (don't bleed into large gaps)
     ball_speed_smooth[~ball_vis] = np.nan
 
+    # Compute ball velocity components & acceleration magnitude (m/s^2) on visible frames
+    vx = np.full(n, np.nan, dtype=np.float64)
+    vy = np.full(n, np.nan, dtype=np.float64)
+    if len(vis_idx) >= 2:
+        ok_a = (dt >= 1) & (dt <= 3)
+        bx_m = bx.astype(np.float64) * length
+        by_m = by.astype(np.float64) * width
+        vx[vis_idx[1:][ok_a]] = (bx_m[vis_idx[1:][ok_a]] - bx_m[vis_idx[:-1][ok_a]]) * (fps / dt[ok_a])
+        vy[vis_idx[1:][ok_a]] = (by_m[vis_idx[1:][ok_a]] - by_m[vis_idx[:-1][ok_a]]) * (fps / dt[ok_a])
+    ax = np.diff(vx, prepend=np.nan) * fps
+    ay = np.diff(vy, prepend=np.nan) * fps
+    ball_accel = np.hypot(ax, ay)
+    ball_accel = nan_box_smooth_blocked(ball_accel, half_win=1, blocks=active_blocks)
+    ball_accel[~ball_vis] = np.nan
+
     # Missing-ball gap length & boundary context (last seen before gap / first seen after gap)
     gap_len = np.zeros(n, dtype=np.int32)
     gap_near_edge = np.zeros(n, dtype=bool)
@@ -119,6 +134,7 @@ def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5, active_blocks
         "ball_oob": ball_oob,
         "ball_near_edge": ball_near_edge,
         "ball_speed": ball_speed_smooth,
+        "ball_accel": ball_accel,
         "gap_len": gap_len,
         "gap_near_edge": gap_near_edge,
         "gap_oob": gap_oob,
