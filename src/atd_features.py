@@ -34,7 +34,21 @@ def nan_box_smooth(values, half_win):
     return out
 
 
-def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5):
+def nan_box_smooth_blocked(values, half_win, blocks=None):
+    """Run nan_box_smooth independently within each [start, end) block to prevent boundary bleed."""
+    if blocks is None:
+        return nan_box_smooth(values, half_win)
+    n = len(values)
+    out = np.full(n, np.nan, dtype=np.float64)
+    for s, e in blocks:
+        s_clamped = max(0, int(s))
+        e_clamped = min(n, int(e))
+        if e_clamped > s_clamped:
+            out[s_clamped:e_clamped] = nan_box_smooth(values[s_clamped:e_clamped], half_win)
+    return out
+
+
+def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5, active_blocks=None):
     """Compute ball visibility, boundary flags, smoothed ball speed (m/s), and gap context."""
     length, width = pitch
     n = len(bx)
@@ -64,7 +78,7 @@ def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5):
         spd = np.clip(spd, 0.0, 45.0)
         ball_speed[vis_idx[1:][ok]] = spd[ok]
 
-    ball_speed_smooth = nan_box_smooth(ball_speed, half_win=2)
+    ball_speed_smooth = nan_box_smooth_blocked(ball_speed, half_win=2, blocks=active_blocks)
     # Only keep smoothed speed where ball is actually visible (don't bleed into large gaps)
     ball_speed_smooth[~ball_vis] = np.nan
 
@@ -74,25 +88,33 @@ def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5):
     gap_oob = np.zeros(n, dtype=bool)
     gap_pre_speed = np.full(n, np.nan, dtype=np.float64)
 
-    missing = (~ball_vis).astype(np.int8)
-    edges = np.diff(np.concatenate(([0], missing, [0])))
-    starts = np.flatnonzero(edges == 1)
-    stops = np.flatnonzero(edges == -1)
-    for s, e in zip(starts, stops):
-        length_g = e - s
-        gap_len[s:e] = length_g
-        pre_edge = bool(ball_near_edge[s - 1]) if s > 0 else False
-        post_edge = bool(ball_near_edge[e]) if e < n else False
-        gap_near_edge[s:e] = pre_edge or post_edge
+    scan_blocks = active_blocks if active_blocks is not None else [(0, n)]
+    for b_s, b_e in scan_blocks:
+        b_s = max(0, int(b_s))
+        b_e = min(n, int(b_e))
+        if b_e <= b_s:
+            continue
+        missing = (~ball_vis[b_s:b_e]).astype(np.int8)
+        edges = np.diff(np.concatenate(([0], missing, [0])))
+        starts = np.flatnonzero(edges == 1) + b_s
+        stops = np.flatnonzero(edges == -1) + b_s
+        for s, e in zip(starts, stops):
+            length_g = e - s
+            gap_len[s:e] = length_g
+            pre_edge = bool(ball_near_edge[s - 1]) if s > b_s else False
+            post_edge = bool(ball_near_edge[e]) if e < b_e else False
+            gap_near_edge[s:e] = pre_edge or post_edge
 
-        pre_oob = bool(ball_oob[s - 1]) if s > 0 else False
-        post_oob = bool(ball_oob[e]) if e < n else False
-        gap_oob[s:e] = pre_oob or post_oob
+            pre_oob = bool(ball_oob[s - 1]) if s > b_s else False
+            post_oob = bool(ball_oob[e]) if e < b_e else False
+            gap_oob[s:e] = pre_oob or post_oob
 
-        if s > 0:
-            gap_pre_speed[s:e] = ball_speed_smooth[s - 1]
+            if s > b_s:
+                gap_pre_speed[s:e] = ball_speed_smooth[s - 1]
 
     return {
+        "ball_x": bx,
+        "ball_y": by,
         "ball_visible": ball_vis,
         "ball_oob": ball_oob,
         "ball_near_edge": ball_near_edge,
@@ -104,25 +126,38 @@ def _compute_ball_kinematics(bx, by, pitch, fps, max_gap_frames=5):
     }
 
 
-def _compute_player_kinematics(px, ps):
-    """Compute collective player speeds (works on 100% of frames even when ball is NaN)."""
+def _compute_player_kinematics(px, ps, half_win=12, active_blocks=None):
+    """Compute collective player speeds & walking share (works even when ball is NaN)."""
+    valid_ps = ~np.isnan(ps)
+    n_spd = np.sum(valid_ps, axis=1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         n_players = np.sum(~np.isnan(px), axis=1).astype(np.int16)
         mean_speed = np.nanmean(ps, axis=1).astype(np.float64)
         p80_speed = np.nanpercentile(ps, 80, axis=1).astype(np.float64)
+        p90_speed = np.nanpercentile(ps, 90, axis=1).astype(np.float64)
 
-    # Require at least 6 tracked players to trust collective speed
+    walk_fraction = np.sum((ps < 1.5) & valid_ps, axis=1) / np.maximum(1, n_spd)
+
+    # Require at least 6 tracked players to trust collective speed (v1 uses mean/p80);
+    # also require 6 tracked speeds before computing p90/walk_fraction across substitute slots.
     too_few = n_players < 6
+    too_few_spd = too_few | (n_spd < 6)
     mean_speed[too_few] = np.nan
     p80_speed[too_few] = np.nan
+    p90_speed[too_few_spd] = np.nan
+    walk_fraction[too_few_spd] = np.nan
 
     return {
         "n_players": n_players,
         "mean_player_speed": mean_speed,
         "p80_player_speed": p80_speed,
-        "mean_player_speed_smooth": nan_box_smooth(mean_speed, half_win=12),
-        "p80_player_speed_smooth": nan_box_smooth(p80_speed, half_win=12),
+        "p90_player_speed": p90_speed,
+        "walk_fraction": walk_fraction,
+        "mean_player_speed_smooth": nan_box_smooth_blocked(mean_speed, half_win=half_win, blocks=active_blocks),
+        "p80_player_speed_smooth": nan_box_smooth_blocked(p80_speed, half_win=half_win, blocks=active_blocks),
+        "p90_player_speed_smooth": nan_box_smooth_blocked(p90_speed, half_win=half_win, blocks=active_blocks),
+        "walk_fraction_smooth": nan_box_smooth_blocked(walk_fraction, half_win=half_win, blocks=active_blocks),
     }
 
 
@@ -170,15 +205,20 @@ def _compute_ball_proximity(px, py, ps, bx, by, team_of_slot, pitch):
     }
 
 
-def extract_atd_features(atd):
+def extract_atd_features(atd, active_blocks=None):
     """Build frame-aligned feature dictionary from loaded ATD arrays."""
     feats = {}
     feats.update(
         _compute_ball_kinematics(
-            atd["ball_x"], atd["ball_y"], atd["pitch"], atd["fps"]
+            atd["ball_x"], atd["ball_y"], atd["pitch"], atd["fps"],
+            active_blocks=active_blocks,
         )
     )
-    feats.update(_compute_player_kinematics(atd["player_x"], atd["player_s"]))
+    feats.update(
+        _compute_player_kinematics(
+            atd["player_x"], atd["player_s"], active_blocks=active_blocks
+        )
+    )
     feats.update(
         _compute_ball_proximity(
             atd["player_x"],
