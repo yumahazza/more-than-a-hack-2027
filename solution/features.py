@@ -72,19 +72,32 @@ def kick_frames(acc, vis, near_d, near_team, duel, threshold, reach):
     return out
 
 
-def calibrate(vis, speed, near_d, activity_s, acc):
-    """v6: possession radius and kick threshold from this match's own distributions (no labels)."""
-    slow_live = (vis & np.isfinite(near_d) & (np.nan_to_num(speed, nan=99) < P.CAL_SLOW_BALL)
+def calibrate(vis, speed, near_d, second_d, activity_s, acc, graded):
+    """Possession radius and kick threshold from this match's own distributions (no labels).
+
+    v6: zone = 75th percentile of the nearest-player distance with a slow ball in live play,
+        kick threshold = 90th percentile of the acceleration.
+    v7: only graded frames (the halves we label; pre-match and halftime frames are not play), and
+        the zone is capped by the data instead of a fixed 2.5 m: it may not reach past the median
+        distance of the SECOND-nearest player in the same sample, or it would stop singling out
+        one player.
+    """
+    base = vis & graded
+    slow_live = (base & np.isfinite(near_d) & (np.nan_to_num(speed, nan=99) < P.CAL_SLOW_BALL)
                  & (np.nan_to_num(activity_s, nan=0) >= P.SLOW_PLAYERS))
-    if slow_live.sum() >= 100:
-        r = float(np.percentile(near_d[slow_live], P.CAL_ZONE_PCT))
+    n_slow = int(slow_live.sum())
+    if n_slow >= 100:
+        r_raw = float(np.percentile(near_d[slow_live], P.CAL_ZONE_PCT))
+        second = second_d[slow_live]
+        cap = float(np.median(second[np.isfinite(second)])) if np.isfinite(second).any() else r_raw
     else:
-        r = P.R_POSSESSION
-    r = float(np.clip(r, P.R_POSSESSION, P.CAL_ZONE_MAX))
-    a = acc[vis & np.isfinite(acc)]
+        r_raw = cap = P.R_POSSESSION
+    r = float(max(min(r_raw, cap), P.R_POSSESSION))
+    a = acc[base & np.isfinite(acc)]
     k = float(np.percentile(a, P.CAL_KICK_PCT)) if a.size >= 100 else P.KICK_ACCEL
     k = max(k, P.KICK_ACCEL)
-    return {"r_zone": r, "r_duel": r, "kick_accel": k, "n_slow_live": int(slow_live.sum())}
+    return {"r_zone": r, "r_duel": r, "kick_accel": k, "n_slow_live": n_slow,
+            "r_zone_raw": r_raw, "r_zone_cap": cap}
 
 
 def rolling_nanmean(x, half):
@@ -97,8 +110,16 @@ def rolling_nanmean(x, half):
     return np.where(count > 0, (c[hi] - c[lo]) / np.maximum(count, 1), np.nan)
 
 
-def compute(arrays, length, width):
+def compute(arrays, length, width, halves=None):
+    """Per-frame features. `halves` = [(half, first, last)] limits the calibration to play;
+    None calibrates on every frame (used by the synthetic test)."""
     ball, players, team = arrays["ball"], arrays["players"], arrays["team"]
+    graded = np.zeros(len(ball), dtype=bool)
+    if halves is None:
+        graded[:] = True
+    else:
+        for _, first, last in halves:
+            graded[first:last + 1] = True
     bx = ball[:, 0].astype(np.float64)
     by = ball[:, 1].astype(np.float64)
     vis = np.isfinite(bx) & np.isfinite(by)
@@ -118,6 +139,9 @@ def compute(arrays, length, width):
         dist = np.hypot(px - bx[:, None].astype(np.float32), py - by[:, None].astype(np.float32))
         d_home = np.nanmin(np.where(team[None, :] == HOME, dist, np.nan), axis=1)
         d_away = np.nanmin(np.where(team[None, :] == AWAY, dist, np.nan), axis=1)
+        # v7: distance to the second-nearest player of either team (caps the possession zone)
+        second_d = np.partition(np.where(np.isfinite(dist), dist, np.inf), 1, axis=1)[:, 1]
+        second_d[~np.isfinite(second_d)] = np.nan
 
         # player activity: mean speed over all tracked players, computed from positions
         s = P.ACTIVITY_SPAN
@@ -138,7 +162,7 @@ def compute(arrays, length, width):
 
     # v5 structure (Vidal-Codina et al. 2022; Link & Hoernig 2017), v6 values calibrated on this match
     accel = ball_acceleration(bx, by, P.SG_WINDOW, P.FPS)
-    calib = calibrate(vis, speed, near_d, activity_s, accel)
+    calib = calibrate(vis, speed, near_d, second_d, activity_s, accel, graded)
     r_duel = calib["r_duel"]
     duel = (np.nan_to_num(d_home, nan=np.inf) <= r_duel) & (np.nan_to_num(d_away, nan=np.inf) <= r_duel)
     kick_team = kick_frames(accel, vis, near_d, near_team, duel, calib["kick_accel"], calib["r_zone"])

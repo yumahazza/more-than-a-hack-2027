@@ -47,7 +47,11 @@ R_DUEL = 1.0               # m  (v5 value; v6 uses the calibrated possession rad
 # in that sample, never below the literature 1 m and never above CAL_ZONE_MAX.
 CAL_SLOW_BALL = 2.0        # m/s; a dribbled or received ball, not a pass
 CAL_ZONE_PCT = 75          # % of those frames the zone must cover
-CAL_ZONE_MAX = 2.5         # m; beyond this the "zone" would cover a neighbour too
+# v7: the upper limit is no longer a fixed 2.5 m (v6: the percentile was above it, so our own cap
+# decided the radius). The zone may not reach past the median distance from the ball to the
+# SECOND-nearest player in the same sample; beyond that it no longer singles out one player.
+# v7: calibration uses graded frames only (pre-match and halftime are not play; v6 took the kick
+# threshold over all frames: 26.3 m/s^2, against 18.1 over graded frames).
 # Duel zone = the calibrated possession zone (Vidal-Codina et al.: duel radius >= possession radius).
 # Kick: a kick must stand out of this provider's acceleration noise, as 4 m/s^2 did for TRACAB.
 # Threshold = the CAL_KICK_PCT percentile of the smoothed acceleration over ball-visible frames,
@@ -133,8 +137,14 @@ TAG_EVIDENCE = 0.05        # per frame while the ball is lost and a reliable tag
 MEAN_POSSESSION_S = 12.0
 SWITCH_COST = 5.70         # = ln(MEAN_POSSESSION_S * FPS)
 # A kick by one team, not in a duel, is one contact, and one contact starts a team possession
-# (Link & Hoernig 2017; also the public ground truth's own definition). It is worth one change.
-KICK_EVIDENCE = SWITCH_COST
+# (Link & Hoernig 2017; also the public ground truth's own definition).
+# v7: a detected kick is evidence, not certainty. In an HMM the evidence of a detector is the log
+# of its odds of being right: ln(precision / (1 - precision)). Link & Hoernig (2017, Table 1)
+# report kick-detection precision .86 on cleaned TRACAB data, so ln(.86 / .14) = 1.82. Our data is
+# noisier, so this is an upper bound. v5/v6 gave a kick the whole SWITCH_COST, i.e. treated every
+# detected kick as certain; now a kick needs ~0.3 s of zone evidence to change the team.
+KICK_PRECISION = 0.86
+KICK_EVIDENCE = 1.82       # = ln(KICK_PRECISION / (1 - KICK_PRECISION))
 START_PRIOR = 20.0         # the restart team is near certain at the first frame of live play
 START_LOOKAHEAD = 5 * FPS  # after a restart, the first kick within 5 s names the team
 SETPIECE_WINDOW = 5 * FPS  # a set-piece tag whose window +/- 5 s covers the restart names it too

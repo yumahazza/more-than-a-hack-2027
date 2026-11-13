@@ -1,6 +1,6 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v6.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v7.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
 Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
@@ -31,7 +31,7 @@ LETTERS = {0: "H", 1: "A", DEAD: "D", NONE: "X"}
 
 def predict(arrays, tag_data, halves):
     length, width = GAMES[GAME]["pitch"]
-    f = compute(arrays, length, width)
+    f = compute(arrays, length, width, halves)
     dead = detect(f, tag_data, halves)
     labels = assign(f, dead, tag_data, halves)
     return labels, f
@@ -65,8 +65,11 @@ def summary(labels, f, halves):
     print("  dead-ball stretches (runs of D): {}".format(n_dead))
     minutes = graded.sum() / P.FPS / 60
     c = f["calib"]
-    print("  calibrated: possession/duel zone {:.2f} m (from {} slow-ball live frames), "
-          "kick threshold {:.1f} m/s^2".format(c["r_zone"], c["n_slow_live"], c["kick_accel"]))
+    print("  calibrated: possession/duel zone {:.2f} m (p{} nearest {:.2f} m, cap = median second-nearest "
+          "{:.2f} m; {} slow-ball live frames)".format(c["r_zone"], P.CAL_ZONE_PCT, c["r_zone_raw"],
+                                                     c["r_zone_cap"], c["n_slow_live"]))
+    print("  calibrated: kick threshold {:.1f} m/s^2 (p{} over graded frames), kick evidence {:.2f}".format(
+        c["kick_accel"], P.CAL_KICK_PCT, P.KICK_EVIDENCE))
     kicks = f["kick_team"][graded]
     vis_g = f["vis"][graded]
     print("  kicks credited: {:.1f} per minute (home {:.0f}%)   duel frames: {:.1f}% of ball-visible".format(
@@ -85,7 +88,7 @@ def summary(labels, f, halves):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v6", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v7", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 
