@@ -1,9 +1,11 @@
 """Which frames are dead ball (D).
 
-Three sources, combined:
+Four sources, combined:
   1. ball out of play  -- the ball crosses a line; dead until the restart
   2. stoppage          -- players walking and no pass, for long enough; dead until the restart
+                          (v9: tolerant to brief interruptions, windowed)
   3. before kick-off   -- from the start of a half until the ball is kicked from the centre
+  4. loose ball (v9)   -- a slow ball nobody goes near for 2 s; dead until the restart
 
 A restart is a kick or throw of a ball that was still or held: fast ball, inside the pitch, after
 at least 0.5 s of a slow (or untracked) ball, and not before a set-piece tag that covers it.
@@ -37,6 +39,14 @@ def drop_short(mask, min_len):
         if l < min_len:
             out[s:s + l] = False
     return out
+
+
+def rolling_mean(mask, half):
+    """Centred share of True over +/- half frames."""
+    c = np.concatenate(([0], np.cumsum(mask.astype(np.int64))))
+    i = np.arange(len(mask))
+    lo, hi = np.maximum(0, i - half), np.minimum(len(mask), i + half + 1)
+    return (c[hi] - c[lo]) / (hi - lo)
 
 
 def rolling_max(x, half):
@@ -102,7 +112,12 @@ def detect(f, tags, halves):
     slow = np.nan_to_num(f["activity_s"], nan=np.inf) < P.SLOW_PLAYERS
     passing = sustained(vis & (np.nan_to_num(speed, nan=0.0) > P.PASS_SPEED), P.FAST_MIN)
     quiet_ball = ~rolling_max(passing, P.QUIET_WINDOW)     # no pass within +/- 1 s
-    quiet = close_holes(slow & quiet_ball, P.CLOSE_HOLES)
+    quiet_raw = slow & quiet_ball
+    quiet = close_holes(quiet_raw, P.CLOSE_HOLES)
+    # v9: a stoppage tolerates brief interruptions (the ball knocked out to stop play, a player
+    # jogging over): mostly quiet over a 4 s window counts too. diagnose.py: an injury stoppage
+    # had a pass on 13% of its frames, so no contiguous quiet stretch reached the minimum.
+    quiet |= (rolling_mean(quiet_raw, P.QUIET_FRAC_WINDOW) >= P.QUIET_FRAC) & slow
     sp = tags["sp_start"]
     phase = tags["phase"]
     for s, l in zip(*runs(quiet)):
@@ -118,6 +133,18 @@ def detect(f, tags, halves):
             continue
         # the stoppage lasts until the restart (players may jog into position before it)
         restart = find_restart(f, cand, tags, s, max(s + P.FPS, e - P.FPS), e + P.STOP_EXTEND)
+        dead[s:max(e, restart or e)] = True
+
+    # 4. (v9) loose ball: visible, slow, and nobody near it for LOOSE_MIN. In live play a free ball
+    # is reached within a second or two (a sprinter covers ~10 m in 1.5 s), so a ball left alone
+    # that long has been abandoned: out of play, or play stopped. Idea from a teammate's model;
+    # radius tied to our calibrated possession zone instead of a fixed distance.
+    loose_r = P.LOOSE_ZONES * f["r_zone"]
+    loose = (vis & (np.nan_to_num(f["near_d"], nan=np.inf) > loose_r)
+             & (np.nan_to_num(speed, nan=99) < P.CAL_SLOW_BALL))
+    for s, l in zip(*runs(drop_short(loose, P.LOOSE_MIN))):
+        e = s + l
+        restart = find_restart(f, cand, tags, s, e, e + P.STOP_EXTEND)
         dead[s:max(e, restart or e)] = True
 
     # 3. before each half's kick-off

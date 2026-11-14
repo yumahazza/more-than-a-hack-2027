@@ -16,6 +16,9 @@ Story (frames at 25 fps):
     ~2860     home dribbles over the goal line         -> D
     3100-3150 the ball is CARRIED back at a jog (not a restart), placed, then
     3200      away goal kick                           -> A
+    3450      away lets the ball go and jogs off; from ~3500 nobody is near it for 4 s while
+              everyone keeps moving (live tempo, so only the v9 loose-ball rule can see it) -> D
+    3600      home restarts from the still ball, dribbles -> H
 """
 
 import os
@@ -32,7 +35,7 @@ from features import compute  # noqa: E402
 from possession import assign  # noqa: E402
 
 L, W = 105.3, 68.0
-N = 3400
+N = 3800
 rng = np.random.default_rng(0)
 
 
@@ -159,6 +162,35 @@ def build():
             players[t, A] = b - 0.4 * unit(v)
             players[t, H] = players[t - 1, H] + [-2.0 / P.FPS, 0]
 
+    # -- loose ball (v9): released at 3450, rolls slowly, left alone, then home restarts at 3600 --
+    pos = ball[3449].copy()
+    for t in range(3450, 3575):                     # rolls at 1 m/s, nobody near
+        ball[t] = pos
+        vel[t] = (0.0, 1.0)
+        pos = pos + np.array([0.0, 1.0]) / P.FPS
+    ball[3575:3600] = pos                           # comes to rest
+    for t in range(3600, N):                        # home kick, then home dribble
+        v = (9.0, 0.0) if t < 3610 else (3.0, 0.0)
+        ball[t] = pos
+        vel[t] = v
+        pos = pos + np.array(v) / P.FPS
+    for t in range(3450, N):
+        b, v = ball[t], vel[t]
+        players[t, A] = players[t - 1, A] + [-2.0 / P.FPS, 0]          # away jogs off
+        if t < 3540:
+            players[t, H] = players[t - 1, H]
+        elif t < 3600:                                                 # home walks up to it
+            target = b - [0.5, 0]
+            players[t, H] = players[t - 1, H] + (target - players[t - 1, H]) / (3600 - t)
+        else:
+            players[t, H] = b - 0.5 * unit(v)
+    for k in walkers:                                # everyone else stays well clear (live tempo)
+        for t in range(3450, 3600):
+            d = players[t, k] - ball[t]
+            r = np.hypot(*d)
+            if r < 8.0:
+                players[t, k] = ball[t] + d / max(r, 1e-6) * 8.0
+
     arrays = {"ball": np.column_stack([ball, np.full(N, np.nan)]).astype(np.float32),
               "players": np.concatenate([players, np.full((N, 46, 1), np.nan)], axis=2).astype(np.float32),
               "team": team}
@@ -200,7 +232,7 @@ def main():
 
     expected = [("D", 0, 100), ("H", 100, 600), ("A", 600, 894), ("D", 894, 1252),
                 ("H", 1252, 1700), ("A", 1700, 2200), ("D", 2200, 2600), ("H", 2600, 2860),
-                ("D", 2860, 3200), ("A", 3200, 3400)]
+                ("D", 2860, 3200), ("A", 3200, 3500), ("D", 3500, 3600), ("H", 3600, 3800)]
     tolerance = P.FPS   # 1 s; a stoppage is only seen once the 1 s activity smoothing catches it
     ok = len(got) == len(expected) and all(
         g[2] == x[0] and abs(g[0] - x[1]) <= tolerance and abs(g[1] - x[2]) <= tolerance

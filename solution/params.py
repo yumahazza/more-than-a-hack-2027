@@ -92,6 +92,14 @@ QUIET_WINDOW = FPS         # +/- 1 s
 # v3: a 5 s walk without a pass is a stoppage only where Smart Tagging does NOT describe a phase of
 # play (explore2: lost-ball stretches covered by phase tags are mostly live play).
 LIVE_TAG_MAX = 0.5         # share of the stretch covered by phase-of-play tags
+# v9: windowed stoppage. Within +/- 2 s, at least 2/3 of the frames quiet (and players slow now)
+# also counts as quiet, so one interruption cannot split a stoppage below STOP_MIN.
+QUIET_FRAC_WINDOW = 2 * FPS
+QUIET_FRAC = 2 / 3
+# v9: loose ball (idea from a teammate's model, values ours): slow ball (< CAL_SLOW_BALL) with
+# nobody within LOOSE_ZONES x the calibrated possession zone for LOOSE_MIN -> dead until restart.
+LOOSE_ZONES = 2.0          # two possession zones (~5 m with the 2.54 m zone)
+LOOSE_MIN = 2 * FPS        # 2 s; a sprinter covers ~14 m in that time
 STOP_MIN = 3 * FPS         # a stoppage shorter than 3 s is not worth a D (restarts take longer)
 STOP_ALONE = 5 * FPS       # walking players and no pass for 5 s is a stoppage even without a tag
 STOP_LONG = 8 * FPS        # a long quiet stretch with the ball lost is a stoppage even untagged
