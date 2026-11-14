@@ -145,6 +145,14 @@ SWITCH_COST = 5.70         # = ln(MEAN_POSSESSION_S * FPS)
 # detected kick as certain; now a kick needs ~0.3 s of zone evidence to change the team.
 KICK_PRECISION = 0.86
 KICK_EVIDENCE = 1.82       # = ln(KICK_PRECISION / (1 - KICK_PRECISION))
+# v8: team shape while the ball is lost (solution/shape.py). Stretch index difference, smoothed
+# +/- 1 s; logistic fit on first-pass pseudo-labels from frames at least 2 s away from any change;
+# per-frame evidence divided by the feature's correlation time (capped at 10 s).
+USE_SHAPE = True
+SHAPE_SMOOTH = FPS         # +/- 1 s
+SHAPE_MARGIN = 2 * FPS     # training frames must be this far from a change of label
+SHAPE_MIN_TRAIN = 5000     # frames (200 s); fewer -> no shape model
+SHAPE_TAU_MAX = 10 * FPS
 START_PRIOR = 20.0         # the restart team is near certain at the first frame of live play
 START_LOOKAHEAD = 5 * FPS  # after a restart, the first kick within 5 s names the team
 SETPIECE_WINDOW = 5 * FPS  # a set-piece tag whose window +/- 5 s covers the restart names it too

@@ -150,16 +150,30 @@ def assign(f, dead, tags, halves):
     ep_teams = f["kick_team"][kick_at].astype(np.int8)
     llr = evidence(f, tags)
 
-    for _, first, last in halves:
-        hi = min(last + 1, n)
-        labels[first:hi][dead[first:hi]] = DEAD
-        previous = None
-        for rs, rl in zip(*runs(~dead[first:hi])):
-            s, e = first + int(rs), first + int(rs + rl)
-            start = start_team(s, e, f, ep_starts, ep_teams, tags, previous)
-            labels[s:e] = viterbi(llr[s:e], start)
-            previous = int(labels[e - 1])
-        absorb_short(labels, P.MIN_POSSESSION, first, hi)
+    def decode(llr):
+        out = np.full(n, NONE, dtype=np.int8)
+        for _, first, last in halves:
+            hi = min(last + 1, n)
+            out[first:hi][dead[first:hi]] = DEAD
+            previous = None
+            for rs, rl in zip(*runs(~dead[first:hi])):
+                s, e = first + int(rs), first + int(rs + rl)
+                start = start_team(s, e, f, ep_starts, ep_teams, tags, previous)
+                out[s:e] = viterbi(llr[s:e], start)
+                previous = int(out[e - 1])
+            absorb_short(out, P.MIN_POSSESSION, first, hi)
+        return out
+
+    labels = decode(llr)
+    f["shape_model"] = None
+    if P.USE_SHAPE:
+        # v8: second pass with team-shape evidence on lost-ball live frames (see shape.py)
+        import shape
+        model = shape.fit(f, labels, dead)
+        f["shape_model"] = model
+        if model is not None:
+            lost_live = ~f["vis"] & ~dead
+            labels = decode(llr + shape.evidence(f, model, lost_live))
     return labels
 
 

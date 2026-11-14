@@ -88,6 +88,26 @@ Viterbi with forbidden transitions supports our v4 design.
 [mdpi.com/2076-3417/10/22/8046](https://mdpi.com/2076-3417/10/22/8046) (refused automated access).
 A rule-based detector for possession, passes and shots, proposed as a simple baseline.
 
+### Team spread and possession (used in v8). Abstract only.
+Found by search; only the abstracts were read, so the exact bibliographic details must be checked
+before they are cited in the technical document.
+- Clemente et al. (2012), case study of one professional match: the stretch index (mean distance
+  of a team's players to its centroid) differs between moments with and without ball possession
+  (small effect). [Record](https://lida.sport-iat.de/twm/Record/4030810).
+- Clemente et al. (2013), *Measuring collective behaviour in football teams: inspecting the impact
+  of each half of the match on ball possession*, Int. J. Performance Analysis in Sport 13(3):
+  stretch index and surface area differ with and without possession for both teams.
+  [Record](https://www.ingentaconnect.com/content/uwic/ujpa/2013/00000013/00000003/art00010).
+- A 2022 study of professional teams (Science and Medicine in Football,
+  DOI [10.1080/24733938.2022.2055784](https://informahealthcare.com/doi/abs/10.1080/24733938.2022.2055784)):
+  greater surface area and spread when attacking than when defending.
+
+**Used for:** v8 uses the stretch-index difference between the teams as possession evidence while
+the ball is lost. The direction and size of the effect are not taken from these papers: they are
+fitted on this match by logistic regression on our own first-pass labels (pseudo-labels, no human
+labels), so the papers only motivate the feature. PathCRF (above) motivates using player movement
+when the ball is missing.
+
 ## 2. State models
 
 ### Rabiner (1989). Not reachable (scanned PDF without text).

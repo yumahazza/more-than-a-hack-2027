@@ -154,6 +154,11 @@ def compute(arrays, length, width, halves=None):
         activity = np.nanmean(pspeed, axis=1)
     activity_s = rolling_nanmean(activity, P.ACTIVITY_SMOOTH)
 
+    # v8: team shape (stretch index difference, home - away), see shape.py
+    from shape import stretch_index
+    shape = rolling_nanmean(stretch_index(px, py, team, HOME) - stretch_index(px, py, team, AWAY),
+                            P.SHAPE_SMOOTH)
+
     near_d = np.fmin(d_home, d_away)
     near_team = np.where(np.isnan(d_away) | (d_home <= d_away), HOME, AWAY).astype(np.int8)
     margin = np.abs(d_home - d_away)
@@ -169,7 +174,7 @@ def compute(arrays, length, width, halves=None):
 
     return {
         "duel": duel, "kick_team": kick_team, "accel": accel, "calib": calib,
-        "r_zone": calib["r_zone"],
+        "r_zone": calib["r_zone"], "shape": shape,
         "n": len(ball), "vis": vis, "bx": bx, "by": by, "speed": speed, "impulse": impulse,
         "d_home": d_home, "d_away": d_away, "near_d": near_d, "near_team": near_team,
         "margin": margin, "outside": outside, "activity": activity, "activity_s": activity_s,
