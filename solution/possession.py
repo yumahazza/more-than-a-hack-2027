@@ -166,6 +166,7 @@ def assign(f, dead, tags, halves):
 
     labels = decode(llr)
     f["shape_model"] = None
+    llr_ha = llr
     if P.USE_SHAPE:
         # v8: second pass with team-shape evidence on lost-ball live frames (see shape.py)
         import shape
@@ -174,7 +175,30 @@ def assign(f, dead, tags, halves):
         if model is not None:
             lost_live = ~f["vis"] & ~dead
             labels = decode(llr + shape.evidence(f, model, lost_live))
+            llr_ha = llr + shape.evidence(f, model, ~f["vis"])
+    f["joint_model"] = None
+    if P.USE_JOINT:
+        # v10: H / A / D decided together (see joint.py); the labels above are its first pass
+        import joint
+        joint_labels, info = joint.decode(f, tags, halves, labels, dead, llr_ha)
+        f["joint_model"] = info
+        if info is not None:
+            labels = joint_labels
+            for _, first, last in halves:
+                hi = min(last + 1, n)
+                drop_short_dead(labels, P.MIN_DEAD, first, hi)
+                absorb_short(labels, P.MIN_POSSESSION, first, hi)
     return labels
+
+
+def drop_short_dead(labels, min_len, lo, hi):
+    """Dead stretches shorter than min_len take the live label before them (or after, at a start)."""
+    seg = labels[lo:hi]
+    for s, l in zip(*runs(seg == DEAD)):
+        if l < min_len:
+            fill = seg[s - 1] if s > 0 else (seg[s + l] if s + l < len(seg) else HOME)
+            seg[s:s + l] = fill if fill in (HOME, AWAY) else HOME
+    labels[lo:hi] = seg
 
 
 def assign_events(f, dead, tags, halves):

@@ -1,6 +1,6 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v9.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v10.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
 Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
@@ -77,6 +77,19 @@ def summary(labels, f, halves):
         print("  team shape model: {} pseudo-labelled frames, slope {:+.3f} per m (+ = wider home -> home), "
               "agreement {:.1f}%, correlation time {:.1f} s".format(
                   m["n_train"], m["b"], 100 * m["agree"], m["tau"] / P.FPS))
+    j = f.get("joint_model")
+    if j is None:
+        print("  joint H/A/D model: not used")
+    else:
+        print("  joint H/A/D model: {} dead + {} live pseudo-labelled frames, agreement {:.1f}%, "
+              "correlation time {:.1f} s".format(j["n_dead"], j["n_live"], 100 * j["agree"],
+                                                 j["tau"] / P.FPS))
+        print("    first-pass mean live stretch {:.1f} s, mean dead stretch {:.1f} s -> "
+              "cost to dead {:.2f}, from dead {:.2f}".format(
+                  j["mean_alive_s"], j["mean_dead_s"], j["cost_to_dead"], j["cost_from_dead"]))
+        print("    dead-ball cue weights (per standard deviation, + = more likely dead):")
+        for name, w in zip(j["names"], j["w"][1:]):
+            print("      {:<28} {:+.2f}".format(name, w))
     kicks = f["kick_team"][graded]
     vis_g = f["vis"][graded]
     print("  kicks credited: {:.1f} per minute (home {:.0f}%)   duel frames: {:.1f}% of ball-visible".format(
@@ -95,7 +108,7 @@ def summary(labels, f, halves):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v9", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v10", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 

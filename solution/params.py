@@ -161,6 +161,12 @@ SHAPE_SMOOTH = FPS         # +/- 1 s
 SHAPE_MARGIN = 2 * FPS     # training frames must be this far from a change of label
 SHAPE_MIN_TRAIN = 5000     # frames (200 s); fewer -> no shape model
 SHAPE_TAU_MAX = 10 * FPS
+# v10: H / A / D in one three-state HMM (solution/joint.py). The dead-ball evidence model is fitted
+# on first-pass pseudo-labels; transition costs come from first-pass stretch lengths. The hard
+# dead-ball rules of v1-v9 (99% precise on the public window) stay as strong evidence: +1 per
+# frame, so a 1 s hard stretch already outweighs any transition cost.
+USE_JOINT = False          # v10 result: not adopted (see joint.py and the v10 commit)
+HARD_DEAD_EVIDENCE = 1.0
 START_PRIOR = 20.0         # the restart team is near certain at the first frame of live play
 START_LOOKAHEAD = 5 * FPS  # after a restart, the first kick within 5 s names the team
 SETPIECE_WINDOW = 5 * FPS  # a set-piece tag whose window +/- 5 s covers the restart names it too
