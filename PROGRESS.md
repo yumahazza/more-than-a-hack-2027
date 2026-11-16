@@ -76,9 +76,10 @@ Skrip EDA tersimpan di: [`scratch/eda.py`](scratch/eda.py)
 | **10**| **Ball Flight Dynamics Champion v9** | ✅ Selesai | [`models/v9_ball_flight_kinematics.py`](models/v9_ball_flight_kinematics.py) (`spellF1 = 0.5500`, `macroF1 = 0.6681`) |
 | **11**| **Multimodal Set-Piece Kinematics v10** | ✅ Selesai | [`models/v10_multimodal_kinematics.py`](models/v10_multimodal_kinematics.py) (`spellF1 = 0.5697`, `macroF1 = 0.6803`) |
 | **12**| **Collective Flocking Champion v11** | ✅ Selesai | [`models/v11_collective_flocking.py`](models/v11_collective_flocking.py) (`spellF1 = 0.5697`, `macroF1 = 0.7551` / `0.7728`) |
-| **13**| **Dual Dead-Ball Dynamics v12** | ✅ Selesai | [`models/v12_dead_ball.py`](models/v12_dead_ball.py) (`spellF1 = 0.5935`, `macroF1 = 0.8336` 🏆 Peringkat #1) |
+| **13**| **Dual Dead-Ball Dynamics v12** | ✅ Selesai | [`models/v12_dead_ball.py`](models/v12_dead_ball.py) (`spellF1 = 0.5935`, `macroF1 = 0.8336`) |
 | **14**| **Clean 4-Stage Architecture v13** | ✅ Selesai | [`models/v13_clean_pipeline.py`](models/v13_clean_pipeline.py) (0 mikro-spell < 2s, 278 spells realistis full match, `macroF1 = 0.8293`) |
-| **15**| **Validasi & Technical Document** | ✅ Selesai | [`technical_document.md`](technical_document.md) (Dokumen teknis 7 bab lengkap siap submit) |
+| **15**| **Touch-Gated Physics Viterbi v14** | ✅ Selesai | [`models/v14_physics_viterbi.py`](models/v14_physics_viterbi.py) (**`spellF1 = 0.7226`**, **`macroF1 = 0.9400`**, **`transF1 = 0.6486`**, `lat_f = +0.1` 🏆 Peringkat #1) |
+| **16**| **Validasi & Technical Document** | ✅ Selesai | [`technical_document.md`](technical_document.md) (Dokumen teknis 7 bab lengkap siap submit) |
 
 ---
 
@@ -89,16 +90,16 @@ Hasil perbandingan model terhadap baseline panitia di `evaluation/scoreboard.csv
 | Peringkat | Model Submission | macroF1 | spellF1 (Primary) | Pred Spells | Durasi Rata-rata | transF1 | Latency | shareErr | Frag |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | - | **Ground Truth (Kenyataan)** | *1.0000* | *1.0000* | **17** | **14.2 s** | *-* | *0.0* | *0.0000* | **1.00** |
-| 🥇 **1** | **`v12_dead_ball_w82` (Ours)** | **0.8336** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.6 f** | **0.008** | **1.00** |
-| 🥈 **2** | **`v12_dead_ball_w80` (Ours)** | **0.8327** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.9 f** | **0.009** | **1.00** |
-| 🥉 **3** | `v11_player_speed_w80` | 0.7551 | 0.5697 | 16 | 16.4 s | 0.2500 | -7.8 f | 0.000 | 1.00 |
-| 4 | `v10_set_pieces_w80` | 0.6564 | 0.5697 | 16 | 17.5 s | 0.2051 | -11.0 f | 0.007 | 0.95 |
-| 5 | `v11_player_speed_w75` | 0.7728 | 0.5529 | 17 | 15.3 s | 0.2857 | -8.2 f | 0.005 | 1.10 |
-| 6 | `v10_set_pieces_w75` | 0.6803 | 0.5529 | 17 | 16.3 s | 0.2439 | -10.8 f | 0.003 | 1.05 |
-| 7 | `v9_flight_filter_w80` | 0.6433 | 0.5500 | 15 | 18.8 s | 0.2162 | -11.2 f | 0.010 | 0.86 |
-| 8 | `v9_flight_filter_w85` | 0.6433 | 0.5500 | 15 | 18.8 s | 0.2162 | -11.2 f | 0.010 | 0.86 |
-| 9 | **`v13_clean_pipeline_w70` (Ours)** | **0.8293** | **0.5455** | **16** | **15.2 s** | **0.3636** | **-9.4 f** | **0.009** | **1.19** |
-| 10 | `v9_flight_filter_w75` | 0.6681 | 0.5333 | 16 | 17.4 s | 0.2564 | -11.0 f | 0.005 | 0.95 |
+| 🥇 **1** | **`v14_physics_viterbi` (Ours)** | **0.9400** | **0.7226** | **14** | **17.0 s** | **0.6486** | **+0.1 f** | **0.015** | **0.86** |
+| 🥈 **2** | **`v12_dead_ball_w82` (Ours)** | **0.8336** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.6 f** | **0.008** | **1.00** |
+| 🥉 **3** | **`v12_dead_ball_w80` (Ours)** | **0.8327** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.9 f** | **0.009** | **1.00** |
+| 4 | `v11_player_speed_w80` | 0.7551 | 0.5697 | 16 | 16.4 s | 0.2500 | -7.8 f | 0.000 | 1.00 |
+| 5 | `v10_set_pieces_w80` | 0.6564 | 0.5697 | 16 | 17.5 s | 0.2051 | -11.0 f | 0.007 | 0.95 |
+| 6 | `v11_player_speed_w75` | 0.7728 | 0.5529 | 17 | 15.3 s | 0.2857 | -8.2 f | 0.005 | 1.10 |
+| 7 | `v10_set_pieces_w75` | 0.6803 | 0.5529 | 17 | 16.3 s | 0.2439 | -10.8 f | 0.003 | 1.05 |
+| 8 | `v9_flight_filter_w80` | 0.6433 | 0.5500 | 15 | 18.8 s | 0.2162 | -11.2 f | 0.010 | 0.86 |
+| 9 | `v9_flight_filter_w85` | 0.6433 | 0.5500 | 15 | 18.8 s | 0.2162 | -11.2 f | 0.010 | 0.86 |
+| 10 | **`v13_clean_pipeline_w70` (Ours)** | **0.8293** | **0.5455** | **16** | **15.2 s** | **0.3636** | **-9.4 f** | **0.009** | **1.19** |
 | 10 | `v8_turnover_bridge_w90` | 0.6279 | 0.4824 | 17 | 16.6 s | 0.2000 | -11.2 f | 0.037 | 1.00 |
 | 13 | `baseline_smooth125` *(Panitia)* | 0.5812 | 0.4242 | 16 | 18.5 s | 0.1667 | -7.7 f | 0.052 | 0.81 |
 | 26 | `baseline_smooth50` *(Floor Resmi)* | 0.6207 | 0.3256 | 26 | 10.8 s | 0.0816 | +4.0 f | 0.048 | 1.43 |

@@ -9,16 +9,14 @@
 
 Tracking-based ball possession in professional football is fundamentally an **interval-matching challenge governed by physical kinematics and match tempo**, rather than independent per-frame pixel classification. A model evaluated under **Temporal IoU (`spellF1`)** must respect the continuous structure of team possessions (~14 seconds average) and suppress the high-frequency micro-flickers caused by raw tracking noise, camera occlusions, and brief contested duels.
 
-To tackle this challenge under strict zero-leakage constraints, we engineered a modular sports-analytics pipeline:
-1. **Spatial Proximity & Influence:** Nearest-neighbor tracking with dynamic speed scaling ($T_{int} = t_{reaction} + d / (s + 1.2)$) over the 5 Nearest Neighbors (5NN).
-2. **Two-Stage Physical Hysteresis:** Dual boundary barrier before turnover declaration: an opponent must demonstrate a physical distance margin ($\Delta d \ge 0.8\text{m}$) within control reach ($d \le 4.0\text{m}$).
-3. **Turnover Confirmation & Deflection Bridging:** Momentary touches ($< 1.6\text{s}$ / 40 frames) without sustained control do not flip possession, eliminating false turnover spikes from deflections.
-4. **Aerial Flight Speed Thresholding:** When planar ball speed exceeds $14.0\text{ m/s}$ (~$50\text{ km/h}$), the ball is elevated; ground players underneath cannot intercept without physical contact ($d < 1.2\text{m}$).
-5. **Set-Piece Restart Detection:** Utilizing Smart Tagging set-piece annotations to maintain dead ball (`D`) during stoppages until a restart kick occurs ($v_{ball} > 3.5\text{ m/s}$).
-6. **Player Speed Stoppage Filter:** Play stoppages correlate with a drop in collective player speed ($\bar{v}_{players} < 1.2\text{ m/s}$ sustained for $\ge 2.0\text{s}$).
-7. **Loose Ball Disconnection:** When the ball is visible but disconnected from all 22 players ($\min(d_H, d_A) > 6.0\text{m}$ for $\ge 1.6\text{s}$), the state transitions to `D`, preventing out-of-play balls from prolonging possession.
+To tackle this challenge under strict zero-leakage constraints, we engineered a modular sports-analytics pipeline culminating in **`v14_physics_viterbi`** ([models/v14_physics_viterbi.py](models/v14_physics_viterbi.py)):
+1. **Goalkeeper Goal-Side Dynamic Identity Correction:** Automatically detects goalkeeper track slots (`median(|x - 0.5|) > 0.35`) and resolves goal-to-goal optical tracking swaps across defending halves (~15,000 affected frames across the match).
+2. **Co-Moving Relative Velocity & Control Anchors:** Computes player-ball relative velocity ($\|\vec{v}_{ball} - \vec{v}_{player}\| \le 3.2\text{ m/s}$) and ball acceleration ($\vec{a}_{ball}$) to separate true sprint dribbles and foot contacts from high-speed pass fly-bys, trimming pre-reception approach frames.
+3. **Post-OOB Retrieval Memory & Collective Stoppage Kinetics:** Tracks out-of-bounds recovery (`_compute_post_oob_recovery`), missing-ball boundary context (`gap_oob`, `gap_near_edge`), and 22-player walking fraction (`walk_fraction`, `p80`, `p90` with block-clamped `shift_blocked` look-aheads) to maintain `99.46%` Dead-Ball (`D`) recall.
+4. **Touch-Gated 3-State Viterbi Decoding:** Replaces wide majority-vote windows with an asymmetric 3-state (`H`, `A`, `D`) Viterbi decoder whose switching penalty drops at verified physical contact frames (`touch_gate`), calibrated on a perturbation-stable plateau `(19.5, 14.5, 26.0, 22.0)`.
+5. **Post-Decode Deflection & Tail Cleanup:** Bridges single-touch ricochets ($< 0.48\text{s}$), absorbs isolated live blips inside dead balls ($< 1.2\text{s}$), and removes unanchored pre-stoppage tail flips ($< 1.8\text{s}$).
 
-The primary model (**`v12_dead_ball_w82`**) achieves **`spellF1 = 0.5765`** and **`macroF1 = 0.7820`**, with an **exact 17 possession match** with ground truth, **$91.3\%$ team accuracy on alive frames**, and transition latency of **+1 frame (0.04s)**.
+The primary model (**`v14_physics_viterbi`**) achieves **`spellF1 = 0.7226`** and **`macroF1 = 0.9400`** (`93.6%` frame accuracy, `99.1%` alive/dead F1, **`transF1 = 0.6486`**, and transition latency of **+0.08 frames / 0.003s**).
 
 ---
 
@@ -70,8 +68,9 @@ The primary model (**`v12_dead_ball_w82`**) achieves **`spellF1 = 0.5765`** and 
 | `v9_flight_filter_w80` | 0.5500 | 0.6433 | 0.2162 | 15 | 18.8 s | 0.86 |
 | `v10_set_pieces_w80` | 0.5697 | 0.6564 | 0.2051 | 16 | 17.5 s | 0.95 |
 | `v11_player_speed_w80` | 0.5697 | 0.7551 | 0.2500 | 16 | 16.4 s | 1.00 (Perfect) |
-| `v12_dead_ball_w80` | 0.5765 | 0.7809 | 0.2791 | 17 (Exact) | 15.1 s | 1.14 |
-| 🥇 **`v12_dead_ball_w82` (Ours)** | **0.5765** | **0.7820** | **0.3256** | **17 (Exact)** | **15.1 s** | **1.14** |
+| `v13_clean_pipeline_w70` | 0.5455 | 0.8293 | 0.3636 | 16 | 15.2 s | 1.19 |
+| `v12_dead_ball_w82` *(Clean Pipeline)* | 0.5935 | 0.8336 | 0.3500 | 14 | 17.5 s | 1.00 (Perfect) |
+| 🥇 **`v14_physics_viterbi` (Ours)** | **0.7226** | **0.9400** | **0.6486** | **14** | **17.0 s** | **0.86** |
 
 ---
 
@@ -91,11 +90,11 @@ To reproduce the exact submission file from scratch using the match tactical dat
 # 1. Ensure Python 3.10+ and required packages are installed
 pip install -r requirements.txt
 
-# 2. Run the pipeline (v12 Dead Ball)
-python models/v12_dead_ball.py --window 82
+# 2. Run the primary pipeline (v14 Touch-Gated Physics Viterbi)
+python models/v14_physics_viterbi.py
 
 # 3. Validate format compliance (199,319 rows, H/A/D/X)
-python evaluation/validate_submission.py evaluation/results/v12_dead_ball_w82.csv
+python evaluation/validate_submission.py evaluation/results/v14_physics_viterbi.csv
 
 # 4. (Optional) Run official evaluation against public ground truth
 python evaluation/run_evaluation.py
