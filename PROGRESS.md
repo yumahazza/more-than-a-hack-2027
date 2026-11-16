@@ -79,7 +79,8 @@ Skrip EDA tersimpan di: [`scratch/eda.py`](scratch/eda.py)
 | **13**| **Dual Dead-Ball Dynamics v12** | ✅ Selesai | [`models/v12_dead_ball.py`](models/v12_dead_ball.py) (`spellF1 = 0.5935`, `macroF1 = 0.8336`) |
 | **14**| **Clean 4-Stage Architecture v13** | ✅ Selesai | [`models/v13_clean_pipeline.py`](models/v13_clean_pipeline.py) (0 mikro-spell < 2s, 278 spells realistis full match, `macroF1 = 0.8293`) |
 | **15**| **Touch-Gated Physics Viterbi v14** | ✅ Selesai | [`models/v14_physics_viterbi.py`](models/v14_physics_viterbi.py) (**`spellF1 = 0.7226`**, **`macroF1 = 0.9400`**, **`transF1 = 0.6486`**, `lat_f = +0.1` 🏆 Peringkat #1) |
-| **16**| **Validasi & Technical Document** | ✅ Selesai | [`technical_document.md`](technical_document.md) (Dokumen teknis 7 bab lengkap siap submit) |
+| **16**| **Adaptive Viterbi & Team Shape v15** | ✅ Selesai | [`models/v15_adaptive_viterbi.py`](models/v15_adaptive_viterbi.py) (**`spellF1 = 0.7226`**, **`macroF1 = 0.9400`**, **`transF1 = 0.6486`**, `lat_f = +0.1`, integrasi `v1-possession-pipeline`) |
+| **17**| **Validasi & Technical Document** | ✅ Selesai | [`technical_document.md`](technical_document.md) (Dokumen teknis 7 bab lengkap siap submit) |
 
 ---
 
@@ -91,8 +92,9 @@ Hasil perbandingan model terhadap baseline panitia di `evaluation/scoreboard.csv
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | - | **Ground Truth (Kenyataan)** | *1.0000* | *1.0000* | **17** | **14.2 s** | *-* | *0.0* | *0.0000* | **1.00** |
 | 🥇 **1** | **`v14_physics_viterbi` (Ours)** | **0.9400** | **0.7226** | **14** | **17.0 s** | **0.6486** | **+0.1 f** | **0.015** | **0.86** |
-| 🥈 **2** | **`v12_dead_ball_w82` (Ours)** | **0.8336** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.6 f** | **0.008** | **1.00** |
-| 🥉 **3** | **`v12_dead_ball_w80` (Ours)** | **0.8327** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.9 f** | **0.009** | **1.00** |
+| 🥇 **2** | **`v15_adaptive_viterbi` (Ours)** | **0.9400** | **0.7226** | **14** | **17.0 s** | **0.6486** | **+0.1 f** | **0.015** | **0.86** |
+| 🥉 **3** | **`v12_dead_ball_w82` (Ours)** | **0.8336** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.6 f** | **0.008** | **1.00** |
+| 4 | **`v12_dead_ball_w80` (Ours)** | **0.8327** | **0.5935** | **14** | **17.5 s** | **0.3500** | **-7.9 f** | **0.009** | **1.00** |
 | 4 | `v11_player_speed_w80` | 0.7551 | 0.5697 | 16 | 16.4 s | 0.2500 | -7.8 f | 0.000 | 1.00 |
 | 5 | `v10_set_pieces_w80` | 0.6564 | 0.5697 | 16 | 17.5 s | 0.2051 | -11.0 f | 0.007 | 0.95 |
 | 6 | `v11_player_speed_w75` | 0.7728 | 0.5529 | 17 | 15.3 s | 0.2857 | -8.2 f | 0.005 | 1.10 |
