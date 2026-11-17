@@ -217,3 +217,18 @@ TAG_WEIGHTS = {
     "ball in the box": 0.2, "players in the box": 0.2,
 }
 TAG_MARGIN = 0.5           # weighted vote lead needed to name a team
+
+# -- v14: referee whistle from the tactical sound track (whistle.py) --------------------------
+# Pitch chosen by rule from the sound: 3.6-3.9 kHz (that bin is 8.5x over-represented among the
+# 1% most tonal frames; a steady 2.3-2.5 kHz background tone and crowd song at 2.7-3.3 kHz are not).
+# WHISTLE_K was set before the run; it gives 129 whistles, 1.22 per minute, median 0.28 s, inside
+# the plausible 1-2.5 per minute and 0.2-1 s. Unlabelled: half fall on our v12 dead ball.
+USE_WHISTLE = True
+WHISTLE_LEAD = 3 * FPS     # a whistle up to 3 s before players slow down starts that stoppage
+WHISTLE_K = 6.0            # robust sd above the match median tonality (rare, loud tone)
+WHISTLE_MIN_S = 0.15       # shortest whistle; a short foul blast is ~0.2-0.3 s
+WHISTLE_GAP = 2            # frames of dip inside one whistle that are closed
+WHISTLE_HALF_BAND = 1     # 100 Hz bins either side of the chosen pitch (a whistle wavers ~+/-100 Hz)
+WHISTLE_PICK_TOP = 0.01   # share of most tonal frames the pitch is picked from. 0.1% gave the
+                           #   whistle bins ~13 frames each, under PICK_MIN, so a background bin won
+WHISTLE_PICK_MIN = 20     # frames a bin needs among the top frames to be a pitch candidate

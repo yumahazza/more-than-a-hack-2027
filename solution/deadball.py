@@ -131,6 +131,12 @@ def detect(f, tags, halves):
     quiet |= (rolling_mean(quiet_raw, P.QUIET_FRAC_WINDOW) >= P.QUIET_FRAC) & slow
     sp = tags["sp_start"]
     phase = tags["phase"]
+    # v14: a referee whistle shortly before a quiet stretch (see params.USE_WHISTLE)
+    wh = f.get("whistle") if P.USE_WHISTLE else None
+    w_start = None
+    if wh is not None:
+        w_start = wh & ~np.concatenate(([False], wh[:-1]))
+    f["whistle_stops"], f["whistle_new"], f["whistle_backfill"] = 0, 0, 0
     for s, l in zip(*runs(quiet)):
         if l < P.STOP_MIN:
             continue
@@ -140,11 +146,24 @@ def detect(f, tags, halves):
                     or oob[max(s - 3 * P.FPS, 0):e].any()
                     or (l >= P.STOP_LONG and lost > 0.5 and phase[s:e].mean() <= P.LIVE_TAG_MAX))
         alone = l >= P.STOP_ALONE and phase[s:e].mean() <= P.LIVE_TAG_MAX
-        if not (evidence or alone):
+        heard = None
+        if w_start is not None:
+            lo = max(s - P.WHISTLE_LEAD, 0)
+            hit = np.flatnonzero(w_start[lo:min(s + P.FPS, n)])
+            heard = lo + int(hit[0]) if hit.size else None
+        if not (evidence or alone or heard is not None):
             continue
+        if heard is not None:
+            f["whistle_stops"] += 1
+            if not (evidence or alone):
+                f["whistle_new"] += 1           # a stoppage only the whistle supports
+        # the ball is dead from the whistle; players only slow down a second or two later
+        begin = heard if heard is not None and heard < s else s
+        if begin < s:
+            f["whistle_backfill"] += s - begin
         # the stoppage lasts until the restart (players may jog into position before it)
         restart = find_restart(f, cand, tags, s, max(s + P.FPS, e - P.FPS), e + P.STOP_EXTEND)
-        dead[s:max(e, restart or e)] = True
+        dead[begin:max(e, restart or e)] = True
 
     # 4. (v9) loose ball: visible, slow, and nobody near it for LOOSE_MIN. In live play a free ball
     # is reached within a second or two (a sprinter covers ~10 m in 1.5 s), so a ball left alone
