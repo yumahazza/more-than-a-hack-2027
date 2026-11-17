@@ -228,7 +228,7 @@ WHISTLE_LEAD = 3 * FPS     # a whistle up to 3 s before players slow down starts
 WHISTLE_K = 6.0            # robust sd above the match median tonality (rare, loud tone)
 WHISTLE_MIN_S = 0.15       # shortest whistle; a short foul blast is ~0.2-0.3 s
 WHISTLE_GAP = 2            # frames of dip inside one whistle that are closed
-WHISTLE_HALF_BAND = 1     # 100 Hz bins either side of the chosen pitch (a whistle wavers ~+/-100 Hz)
-WHISTLE_PICK_TOP = 0.01   # share of most tonal frames the pitch is picked from. 0.1% gave the
+WHISTLE_HALF_BAND = 1      # 100 Hz bins either side of the chosen pitch (a whistle wavers ~+/-100 Hz)
+WHISTLE_PICK_TOP = 0.01    # share of most tonal frames the pitch is picked from. 0.1% gave the
                            #   whistle bins ~13 frames each, under PICK_MIN, so a background bin won
-WHISTLE_PICK_MIN = 20     # frames a bin needs among the top frames to be a pitch candidate
+WHISTLE_PICK_MIN = 20      # frames a bin needs among the top frames to be a pitch candidate

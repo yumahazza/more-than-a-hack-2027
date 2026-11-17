@@ -1,9 +1,10 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v12.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v14.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
-Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
+Pipeline: tracking + Smart Tagging + referee whistle (tactical sound) -> features -> dead ball ->
+possession -> CSV. The first run decodes the sound once (a few minutes) and caches it in data/cache.
 Prints only aggregate numbers (counts, shares, percentiles), never per-frame output.
 """
 

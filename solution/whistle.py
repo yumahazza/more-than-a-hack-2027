@@ -23,7 +23,7 @@ Method, no frame-specific rule (RULES.md #1) and no hand label:
   5. Threshold = median + WHISTLE_K robust sd of that narrow-band tonality over the graded frames.
      A whistle = a run above it lasting WHISTLE_MIN_S or more, short dips closed.
 
-Output: data/derived/BAR-ATH_whistle.npz (per-frame spectrum summary and whistle flag), and only
+Output: data/cache/BAR-ATH_whistle.npz (per-frame spectrum summary and whistle flag), and only
 aggregate numbers on screen.
 """
 
@@ -38,7 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, ROOT)
-from games import GAME, half_video_blocks, source_frames, video_path  # noqa: E402
+from games import DATA_DIR, GAME, half_video_blocks, source_frames, video_path  # noqa: E402
 
 import params as P  # noqa: E402
 from deadball import close_holes, runs  # noqa: E402
@@ -50,7 +50,7 @@ BAND = (2000.0, 4500.0)
 BIN_HZ = 100
 EDGES = np.arange(BAND[0], BAND[1] + 1, BIN_HZ)
 CHUNK = 20000                # frames per spectrum batch (memory)
-OUT = os.path.join(ROOT, "data", "derived", "{}_whistle.npz".format(GAME))
+OUT = os.path.join(DATA_DIR, "cache", "{}_whistle.npz".format(GAME))   # gitignored, like the ATD cache
 
 
 def ffmpeg_exe():
