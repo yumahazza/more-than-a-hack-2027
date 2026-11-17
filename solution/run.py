@@ -1,6 +1,6 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v10.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v12.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
 Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
@@ -70,6 +70,17 @@ def summary(labels, f, halves):
                                                      c["r_zone_cap"], c["n_slow_live"]))
     print("  calibrated: kick threshold {:.1f} m/s^2 (p{} over graded frames), kick evidence {:.2f}".format(
         c["kick_accel"], P.CAL_KICK_PCT, P.KICK_EVIDENCE))
+    g = f.get("gk", {})
+    print("  v12 goalkeeper fix: {} goalkeeper slots, {} slot-frames credited to the other team".format(
+        len(g.get("gk_slots", [])), g.get("reassigned_frames", 0)))
+    print("  v12 ball out while lost: {} extra out-of-play events".format(f.get("oob_gap_events", 0)))
+    tg = f.get("touch_gate")
+    if tg is None:
+        print("  v12 touch gate: not used")
+    else:
+        print("  v12 touch gate: live frames touch {:.1%} / ball away {:.1%} / lost {:.1%} -> change cost "
+              "{:.2f} / {:.2f} / {:.2f}".format(tg["f_touch"], tg["f_away"], tg["f_lost"],
+                                               tg["cost_touch"], tg["cost_away"], tg["cost_lost"]))
     m = f.get("shape_model")
     if m is None:
         print("  team shape model: not used")
@@ -108,7 +119,7 @@ def summary(labels, f, halves):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v10", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v12", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 

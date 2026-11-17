@@ -103,7 +103,18 @@ def detect(f, tags, halves):
     oob = vis & (f["outside"] > P.OOB_MARGIN)
     oob = drop_short(oob, P.OOB_MIN)
     oob_starts, _ = runs(oob)
-    for o in oob_starts:
+    oob_starts = list(oob_starts)
+    # v12: the ball went out while the tracker had lost it (see params.USE_OOB_GAP)
+    f["oob_gap_events"] = 0
+    if P.USE_OOB_GAP:
+        for s, l in zip(*runs(~vis & in_play)):
+            e = s + l
+            if s == 0 or e >= n or not oob[e] or not vis[s - 1]:
+                continue
+            if f["outside"][s - 1] >= -f["r_zone"]:          # last seen within one zone of a line
+                oob_starts.append(s)
+                f["oob_gap_events"] += 1
+    for o in sorted(oob_starts):
         restart = find_restart(f, cand, tags, o, o + P.RESTART_MIN_DELAY, o + P.RESTART_MAX)
         end = restart if restart is not None else min(o + P.OOB_FALLBACK, n)
         dead[o:end] = True
