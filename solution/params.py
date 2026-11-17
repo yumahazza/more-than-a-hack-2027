@@ -135,6 +135,12 @@ MERGE_DEAD = 2 * FPS       # two dead stretches less than 2 s apart are one stop
 #   zero in a duel or when nobody is within 1 m (ball in flight). v4 used a 2 m radius and a graded
 #   distance lead, two values without a source; the literature zone replaces both.
 EVIDENCE_CAP = 0.5         # per frame; one frame can never decide alone (assumption, no source)
+# v13 (not adopted): calibrate_external.py picks 1.0 on Metrica Sample Game 3 (spellF1 0.503 ->
+#   0.557 there). On this match it over-switches: 409 possessions, mean 8.8 s / median 5.2 s over
+#   the full match (implausibly short for a possession side), and the public-window guardrail
+#   falls (spellF1 -0.11, paired 5-95% -0.16..-0.06). Metrica has the ball tracked throughout;
+#   here the zone is 2.54 m and the ball is lost 41% of the time, so each frame in the zone is
+#   weaker evidence and the external value does not transfer. 0.5 is kept.
 TAG_EVIDENCE = 0.05        # per frame while the ball is lost and a reliable tag names a team
 # Cost of a team change = log of the expected frames between changes; a constant cost per frame
 # is the geometric possession length that Markov models of possession fit (Lopez Pena 2014).
@@ -161,6 +167,34 @@ SHAPE_SMOOTH = FPS         # +/- 1 s
 SHAPE_MARGIN = 2 * FPS     # training frames must be this far from a change of label
 SHAPE_MIN_TRAIN = 5000     # frames (200 s); fewer -> no shape model
 SHAPE_TAU_MAX = 10 * FPS
+# -- v12: ideas from a teammate's model (branch rey, v14), values ours -------------------------
+# Fixed BEFORE looking at any score (2026-11-17). The teammate's values were chosen by grid search
+# on the public window, so only the ideas are taken; every value below comes from the Laws of the
+# Game, from the data's own distribution, or is a stated assumption.
+#
+# (1) Goalkeeper identity. A track slot whose median distance to the halfway line exceeds half the
+#     pitch minus the penalty-area depth (16.5 m, Laws of the Game) lives in a penalty area: a
+#     goalkeeper track. A goalkeeper never plays in the opponent's half, so in each half such a
+#     slot is credited to the team defending the goal on its side (the side where that team's
+#     outfield players stand on average), whatever team the metadata gives the slot.
+USE_GK_FIX = True
+PENALTY_AREA_DEPTH = 16.5  # m
+# (2) Ball out while the tracker had lost it. If the ball reappears OUTSIDE the pitch after a gap
+#     and was last seen within one calibrated possession zone of a line, it went out at the start
+#     of the gap: dead ball from there until the restart.
+USE_OOB_GAP = True
+# (3) Touch-gated team changes. A change of possession needs a contact, so its probability is not
+#     the same on every frame. With T = mean possession in frames and f the share of live frames
+#     of each kind (measured on the match), the per-frame change rate is rho / (T * f) and the cost
+#     its negative log:
+#       ball within a possession zone of a player ("touch possible"): rho = TOUCH_SHARE * (1 - f_lost)
+#       ball visible, nobody within reach:                          rho = (1 - TOUCH_SHARE) * (1 - f_lost)
+#       ball lost (we cannot see where changes happen):            rho = f_lost  -> cost ln(T), as before
+#     TOUCH_SHARE is an assumption: by definition a change happens at a contact; 10% is left for
+#     tracking error (the ball or the player not where the contact really was).
+USE_TOUCH_GATE = True
+TOUCH_SHARE = 0.9
+
 # v10: H / A / D in one three-state HMM (solution/joint.py). The dead-ball evidence model is fitted
 # on first-pass pseudo-labels; transition costs come from first-pass stretch lengths. The hard
 # dead-ball rules of v1-v9 (99% precise on the public window) stay as strong evidence: +1 per
@@ -183,3 +217,18 @@ TAG_WEIGHTS = {
     "ball in the box": 0.2, "players in the box": 0.2,
 }
 TAG_MARGIN = 0.5           # weighted vote lead needed to name a team
+
+# -- v14: referee whistle from the tactical sound track (whistle.py) --------------------------
+# Pitch chosen by rule from the sound: 3.6-3.9 kHz (that bin is 8.5x over-represented among the
+# 1% most tonal frames; a steady 2.3-2.5 kHz background tone and crowd song at 2.7-3.3 kHz are not).
+# WHISTLE_K was set before the run; it gives 129 whistles, 1.22 per minute, median 0.28 s, inside
+# the plausible 1-2.5 per minute and 0.2-1 s. Unlabelled: half fall on our v12 dead ball.
+USE_WHISTLE = True
+WHISTLE_LEAD = 3 * FPS     # a whistle up to 3 s before players slow down starts that stoppage
+WHISTLE_K = 6.0            # robust sd above the match median tonality (rare, loud tone)
+WHISTLE_MIN_S = 0.15       # shortest whistle; a short foul blast is ~0.2-0.3 s
+WHISTLE_GAP = 2            # frames of dip inside one whistle that are closed
+WHISTLE_HALF_BAND = 1      # 100 Hz bins either side of the chosen pitch (a whistle wavers ~+/-100 Hz)
+WHISTLE_PICK_TOP = 0.01    # share of most tonal frames the pitch is picked from. 0.1% gave the
+                           #   whistle bins ~13 frames each, under PICK_MIN, so a background bin won
+WHISTLE_PICK_MIN = 20      # frames a bin needs among the top frames to be a pitch candidate

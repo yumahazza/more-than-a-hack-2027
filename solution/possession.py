@@ -115,9 +115,39 @@ def evidence(f, tags):
     return llr
 
 
-def viterbi(llr, start):
-    """Most likely H/A path for one live stretch, starting (almost surely) with `start`."""
+def touch_costs(f, dead, halves):
+    """v12: per-frame cost of a team change (see params.USE_TOUCH_GATE). Returns (costs, info)."""
+    n = f["n"]
+    costs = np.full(n, P.SWITCH_COST)
+    if not P.USE_TOUCH_GATE:
+        return costs, None
+    graded = np.zeros(n, dtype=bool)
+    for _, first, last in halves:
+        graded[first:min(last + 1, n)] = True
+    live = graded & ~dead
+    vis = f["vis"]
+    touch = vis & np.isfinite(f["near_d"]) & (f["near_d"] <= f["r_zone"])
+    away = vis & ~touch
+    lost = ~vis
+    n_live = max(int(live.sum()), 1)
+    f_t, f_n, f_l = (touch & live).sum() / n_live, (away & live).sum() / n_live, (lost & live).sum() / n_live
+    if min(f_t, f_n) <= 0:
+        return costs, None
+    T = P.MEAN_POSSESSION_S * P.FPS
+    c_t = np.log(T * f_t / (P.TOUCH_SHARE * (1 - f_l)))
+    c_n = np.log(T * f_n / ((1 - P.TOUCH_SHARE) * (1 - f_l)))
+    costs[touch] = c_t
+    costs[away] = c_n
+    return costs, {"f_touch": f_t, "f_away": f_n, "f_lost": f_l,
+                   "cost_touch": c_t, "cost_away": c_n, "cost_lost": float(np.log(T))}
+
+
+def viterbi(llr, start, cost=None):
+    """Most likely H/A path for one live stretch, starting (almost surely) with `start`.
+    `cost` = per-frame team-change cost (v12); None = SWITCH_COST everywhere."""
     n = len(llr)
+    if cost is None:
+        cost = np.full(n, P.SWITCH_COST)
     half = llr / 2.0
     score = np.array([0.0, 0.0])
     score[1 - start] = -P.START_PRIOR
@@ -125,8 +155,9 @@ def viterbi(llr, start):
     for t in range(n):
         emit = (half[t], -half[t])
         if t:
-            stay_h, move_h = score[HOME], score[AWAY] - P.SWITCH_COST
-            stay_a, move_a = score[AWAY], score[HOME] - P.SWITCH_COST
+            c = cost[t]
+            stay_h, move_h = score[HOME], score[AWAY] - c
+            stay_a, move_a = score[AWAY], score[HOME] - c
             # On a tie, take the change as LATE as possible: with no evidence either way the old
             # team keeps the ball, as the scorer itself does when it fills an abstention.
             back[t, HOME] = HOME if stay_h > move_h else AWAY
@@ -149,6 +180,7 @@ def assign(f, dead, tags, halves):
     ep_starts = kick_at.astype(np.int64)
     ep_teams = f["kick_team"][kick_at].astype(np.int8)
     llr = evidence(f, tags)
+    costs, f["touch_gate"] = touch_costs(f, dead, halves)
 
     def decode(llr):
         out = np.full(n, NONE, dtype=np.int8)
@@ -159,7 +191,7 @@ def assign(f, dead, tags, halves):
             for rs, rl in zip(*runs(~dead[first:hi])):
                 s, e = first + int(rs), first + int(rs + rl)
                 start = start_team(s, e, f, ep_starts, ep_teams, tags, previous)
-                out[s:e] = viterbi(llr[s:e], start)
+                out[s:e] = viterbi(llr[s:e], start, costs[s:e])
                 previous = int(out[e - 1])
             absorb_short(out, P.MIN_POSSESSION, first, hi)
         return out

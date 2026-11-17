@@ -1,0 +1,8 @@
+# Exact versions used to produce our submission (Python 3.10.11, Windows 11).
+# RULES.md #3: the submission must be regenerated exactly, so the versions are pinned.
+#   numpy           all computation (its FFT is used for the whistle spectrum)
+#   pandas          the provided homography and tagging loaders (starter/)
+#   imageio-ffmpeg  bundles the ffmpeg binary that decodes the tactical sound track (whistle.py)
+numpy==2.2.6
+pandas==2.3.3
+imageio-ffmpeg==0.8.1

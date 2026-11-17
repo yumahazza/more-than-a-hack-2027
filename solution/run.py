@@ -1,9 +1,10 @@
 """Regenerate our submission from the provided data -- the one command a reviewer runs.
 
-    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v10.csv
+    .\\.venv\\Scripts\\python.exe solution\\run.py                 # -> evaluation/results/v14.csv
     .\\.venv\\Scripts\\python.exe solution\\run.py --name team     # -> evaluation/results/team.csv
 
-Pipeline: tracking + Smart Tagging -> features -> dead ball -> possession -> CSV.
+Pipeline: tracking + Smart Tagging + referee whistle (tactical sound) -> features -> dead ball ->
+possession -> CSV. The first run decodes the sound once (a few minutes) and caches it in data/cache.
 Prints only aggregate numbers (counts, shares, percentiles), never per-frame output.
 """
 
@@ -29,9 +30,11 @@ import tags as tagging  # noqa: E402
 LETTERS = {0: "H", 1: "A", DEAD: "D", NONE: "X"}
 
 
-def predict(arrays, tag_data, halves):
+def predict(arrays, tag_data, halves, whistle=None):
     length, width = GAMES[GAME]["pitch"]
     f = compute(arrays, length, width, halves)
+    if whistle is not None:
+        f["whistle"] = whistle
     dead = detect(f, tag_data, halves)
     labels = assign(f, dead, tag_data, halves)
     return labels, f
@@ -70,6 +73,20 @@ def summary(labels, f, halves):
                                                      c["r_zone_cap"], c["n_slow_live"]))
     print("  calibrated: kick threshold {:.1f} m/s^2 (p{} over graded frames), kick evidence {:.2f}".format(
         c["kick_accel"], P.CAL_KICK_PCT, P.KICK_EVIDENCE))
+    g = f.get("gk", {})
+    print("  v12 goalkeeper fix: {} goalkeeper slots, {} slot-frames credited to the other team".format(
+        len(g.get("gk_slots", [])), g.get("reassigned_frames", 0)))
+    print("  v12 ball out while lost: {} extra out-of-play events".format(f.get("oob_gap_events", 0)))
+    print("  v14 whistle: {} stoppages with a whistle ({} new, supported by nothing else), "
+          "{:.1f} s moved back to the whistle".format(f.get("whistle_stops", 0), f.get("whistle_new", 0),
+                                                      f.get("whistle_backfill", 0) / P.FPS))
+    tg = f.get("touch_gate")
+    if tg is None:
+        print("  v12 touch gate: not used")
+    else:
+        print("  v12 touch gate: live frames touch {:.1%} / ball away {:.1%} / lost {:.1%} -> change cost "
+              "{:.2f} / {:.2f} / {:.2f}".format(tg["f_touch"], tg["f_away"], tg["f_lost"],
+                                               tg["cost_touch"], tg["cost_away"], tg["cost_lost"]))
     m = f.get("shape_model")
     if m is None:
         print("  team shape model: not used")
@@ -108,7 +125,7 @@ def summary(labels, f, halves):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--name", default="v10", help="file name on the board (no .csv)")
+    parser.add_argument("--name", default="v14", help="file name on the board (no .csv)")
     parser.add_argument("--out", default=os.path.join(ROOT, "evaluation", "results"))
     args = parser.parse_args()
 
@@ -116,7 +133,16 @@ def main():
     n = source_frames("tactical", GAME)
     assert len(arrays["ball"]) == n
     halves = half_video_blocks(GAME)
-    labels, f = predict(arrays, tagging.build(n), halves)
+    whistle = None
+    if P.USE_WHISTLE:
+        import whistle as wmod
+        graded = np.zeros(n, dtype=bool)
+        for _, first, last in halves:
+            graded[first:last + 1] = True
+        whistle, winfo = wmod.load(n, graded)
+        print("v14 whistle: pitch {:.0f}-{:.0f} Hz, threshold {:.1f} dB, {} whistles in graded time".format(
+            winfo["pitch_lo"], winfo["pitch_hi"], winfo["threshold"], winfo["n"]))
+    labels, f = predict(arrays, tagging.build(n), halves, whistle)
 
     path = os.path.join(args.out, args.name + ".csv")
     write_csv(path, labels)

@@ -100,6 +100,47 @@ def calibrate(vis, speed, near_d, second_d, activity_s, acc, graded):
             "r_zone_raw": r_raw, "r_zone_cap": cap}
 
 
+def gk_team_matrix(px, team, halves, length):
+    """v12: team per frame and slot, with goalkeeper tracks credited to the goal they stand at.
+
+    Idea from a teammate's model; the rule here is the Laws of the Game: a slot whose median
+    distance to the halfway line exceeds half the pitch minus the penalty-area depth is a
+    goalkeeper track, and a goalkeeper plays in his own half, so in each half the slot belongs to
+    the team defending that side (the side of its outfield players' mean position).
+    """
+    n, slots = px.shape
+    team_f = np.broadcast_to(team[None, :], (n, slots)).copy()
+    info = {"gk_slots": [], "reassigned_frames": 0}
+    if not P.USE_GK_FIX or halves is None:
+        return team_f, info
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        med = np.nanmedian(np.abs(px - length / 2), axis=0)
+    gk = np.flatnonzero(np.nan_to_num(med, nan=0.0) > length / 2 - P.PENALTY_AREA_DEPTH)
+    info["gk_slots"] = gk.tolist()
+    if gk.size == 0:
+        return team_f, info
+    outfield = np.ones(slots, dtype=bool)
+    outfield[gk] = False
+    for _, first, last in halves:
+        rows = slice(first, min(last + 1, n))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            hx = np.nanmean(px[rows][:, outfield & (team == HOME)])
+            ax = np.nanmean(px[rows][:, outfield & (team == AWAY)])
+        if not (np.isfinite(hx) and np.isfinite(ax)):
+            continue
+        left, right = (HOME, AWAY) if hx < ax else (AWAY, HOME)
+        for g in gk:
+            x = px[rows, g]
+            side = np.where(x < length / 2, left, right)
+            col = team_f[rows, g]
+            new = np.where(np.isfinite(x), side, col)
+            info["reassigned_frames"] += int(np.sum(np.isfinite(x) & (new != team[g])))
+            team_f[rows, g] = new
+    return team_f, info
+
+
 def rolling_nanmean(x, half):
     valid = np.isfinite(x)
     c = np.concatenate(([0.0], np.cumsum(np.where(valid, x, 0.0))))
@@ -134,11 +175,12 @@ def compute(arrays, length, width, halves=None):
     # distance from the ball to the nearest player of each team
     px = players[:, :, 0].astype(np.float32)
     py = players[:, :, 1].astype(np.float32)
+    team_f, gk_info = gk_team_matrix(px, team, halves, length)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         dist = np.hypot(px - bx[:, None].astype(np.float32), py - by[:, None].astype(np.float32))
-        d_home = np.nanmin(np.where(team[None, :] == HOME, dist, np.nan), axis=1)
-        d_away = np.nanmin(np.where(team[None, :] == AWAY, dist, np.nan), axis=1)
+        d_home = np.nanmin(np.where(team_f == HOME, dist, np.nan), axis=1)
+        d_away = np.nanmin(np.where(team_f == AWAY, dist, np.nan), axis=1)
         # v7: distance to the second-nearest player of either team (caps the possession zone)
         second_d = np.partition(np.where(np.isfinite(dist), dist, np.inf), 1, axis=1)[:, 1]
         second_d[~np.isfinite(second_d)] = np.nan
@@ -174,7 +216,7 @@ def compute(arrays, length, width, halves=None):
 
     return {
         "duel": duel, "kick_team": kick_team, "accel": accel, "calib": calib,
-        "r_zone": calib["r_zone"], "shape": shape,
+        "r_zone": calib["r_zone"], "shape": shape, "gk": gk_info,
         "n": len(ball), "vis": vis, "bx": bx, "by": by, "speed": speed, "impulse": impulse,
         "d_home": d_home, "d_away": d_away, "near_d": near_d, "near_team": near_team,
         "margin": margin, "outside": outside, "activity": activity, "activity_s": activity_s,
